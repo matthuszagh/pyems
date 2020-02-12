@@ -4,7 +4,6 @@ import atexit
 import subprocess
 from CSXCAD.CSXCAD import ContinuousStructure
 from pyems.port import Port
-from pyems.structure import Structure
 from pyems.automesh import Mesh
 
 
@@ -14,7 +13,6 @@ class Network:
     more ports as well as a number of components and a mesh.
 
     :param ports: A list of `Port` objects.
-    :param structure: A `Structure` object.
     :param mesh: The network `Mesh`.  It's generally recommended to
         leave this argument as its default value, None.  Ommitting it
         causes the mesh to be automatically generated for the network.
@@ -25,14 +23,12 @@ class Network:
         self,
         csx: ContinuousStructure,
         ports: List[Port] = None,
-        structure: Structure = None,
         mesh: Mesh = None,
     ):
         """
         """
         self.csx = csx
         self.ports = ports
-        self.structure = structure
         self.mesh = mesh
 
         # set later
