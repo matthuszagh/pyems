@@ -26,9 +26,11 @@ def microstrip_width_z0(
     Find the characteristic impedance of a microstrip transmission
     line for a given width.
     """
+    width *= 1e-3
     fdtd = openEMS(EndCriteria=1e-5)
     csx = ContinuousStructure()
-    trace_len = 100
+    trace_len = 100e-3
+    sub_width = 40e-3
     micro_port = MicrostripPort(
         csx=csx,
         bounding_box=[
@@ -46,16 +48,14 @@ def microstrip_width_z0(
     )
     substrate.AddBox(
         priority=0,
-        start=np.multiply(
-            1e-3, [-trace_len / 2, -20, -pcb.layer_separation()[0]]
-        ),
-        stop=np.multiply(1e-3, [trace_len / 2, 20, 0]),
+        start=[-trace_len / 2, -sub_width / 2, -pcb.layer_separation()[0]],
+        stop=[trace_len / 2, sub_width / 2, 0],
     )
     efield = FieldDump(
         csx=csx,
         box=[
-            [-trace_len / 2, -20, -pcb.layer_separation()[0]],
-            [trace_len / 2, 20, 0],
+            [-trace_len / 2, -sub_width / 2, -pcb.layer_separation()[0]],
+            [trace_len / 2, sub_width / 2, 0],
         ],
     )
     network = Network(csx=csx, ports=[micro_port])

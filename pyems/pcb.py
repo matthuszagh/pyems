@@ -102,8 +102,8 @@ common_pcbs = {
             (10e9, 3.65),
         ],
         sub_rho=4.4e14,
-        layer_sep=[0.1702, 1.1938, 0.1702],
-        layer_thickness=[0.0356, 0.0178, 0.0178, 0.0356],
+        layer_sep=np.multiply(1e-3, [0.1702, 1.1938, 0.1702]),
+        layer_thickness=np.multiply(1e-3, [0.0356, 0.0178, 0.0178, 0.0356]),
         metal_conductivity=5.8e7,
     )
 }

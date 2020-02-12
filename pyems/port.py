@@ -281,7 +281,7 @@ class MicrostripPort:
         :param rotate: The amount to rotate the port in degrees.  This
             uses `AddTransform('RotateAxis', 'z', rotate)`.
         """
-        self.unit = 1e-3
+        self.unit = 1
         self.csx = csx
         self.box = np.multiply(self.unit, bounding_box)
         self.thickness = self.unit * thickness
