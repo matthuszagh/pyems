@@ -3,14 +3,15 @@ A collection of ready-made simulations related to transmission lines.
 """
 
 from typing import List
+from functools import partial
 import numpy as np
 import matplotlib.pyplot as plt
 from pyems.port import MicrostripPort
 from pyems.pcb import PCB
 from pyems.network import Network
-from pyems.simulation import Simulation
+from pyems.simulation import Simulation, sweep
 from pyems.field_dump import FieldDump
-from pyems.utilities import pretty_print
+from pyems.utilities import pretty_print, table_interp_val
 from pyems import calc
 from openEMS import openEMS
 from CSXCAD.CSXCAD import ContinuousStructure
@@ -40,10 +41,10 @@ class MicrostripSimulation:
         sim.view_field()
         net_ports = sim.get_network().get_ports()
         z0 = net_ports[0].characteristic_impedance()
-        pretty_print(data=[z0[0] / 1e9, z0[1]], col_names=["freq", "z0"])
+        pretty_print(data=[z0[:, 0] / 1e9, z0[:, 1]], col_names=["freq", "z0"])
         if plot:
             plt.figure()
-            plt.plot(z0[0], z0[1])
+            plt.plot(z0[:, 0], z0[:, 1])
             plt.show()
 
     def microstrip_width_sweep(
@@ -55,6 +56,7 @@ class MicrostripSimulation:
         center_width: float = None,
         width_dev_factor: float = 0.1,
         num_points: int = 11,
+        nodes: int = 11,
         plot: bool = False,
     ):
         """
@@ -75,12 +77,32 @@ class MicrostripSimulation:
             self._gen_microstrip_sim(center_freq, half_bandwidth, width, pcb)
             for width in widths
         ]
+        func = partial(self.imped_at_freq, freq=center_freq)
+        sim_vals = sweep(sims=sims, func=func, nodes=11)
+        analytic_vals = [
+            calc.wheeler_z0(
+                w=width,
+                t=pcb.layer_thickness[0],
+                er=pcb.epsr_at_freq(center_freq),
+                h=pcb.layer_sep[0],
+            )
+            for width in widths
+        ]
+        pretty_print(
+            data=[widths, sim_vals, analytic_vals],
+            col_names=["width", "sim", "wheeler"],
+        )
+        if plot:
+            plt.figure()
+            plt.plot(widths, sim_vals, analytic_vals)
+            plt.show()
 
     def imped_at_freq(sim: Simulation, freq: float):
         """
         """
         net_ports = sim.get_network().get_ports()
         z0 = net_ports[0].characteristic_impedance()
+        return table_interp_val(z0, target_col=1, sel_val=freq, sel_col=0)
 
     def _gen_microstrip_sim(
         self,

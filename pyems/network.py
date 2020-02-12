@@ -33,7 +33,7 @@ class Network:
 
         # set later
         self.csx_fd, self.csx_file = tempfile.mkstemp()
-        atexit.register(self._cleanup_files)
+        # atexit.register(self._cleanup_files)
 
     def generate_mesh(
         self, lambda_min: float, expand_bounds: List[float]
@@ -97,7 +97,7 @@ class Network:
         """
         subprocess.run(["AppCSXCAD", self.csx_file])
 
-    def _cleanup_files(self) -> None:
-        """
-        """
-        self.csx_fd.close()
+    # def _cleanup_files(self) -> None:
+    #     """
+    #     """
+    #     self.csx_fd.close()

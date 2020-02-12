@@ -140,27 +140,27 @@ class Probe:
         """
         Get probe frequency data.
 
-        :returns: 2D numpy array where 1st array contains the
-                  frequency bins and 2nd array contains the
-                  corresponding frequency bin values.
+        :returns: 2D numpy array where each inner array is a
+                  frequency, value pair.  The result is sorted by
+                  ascending frequency.
         """
         if not self._data_readp():
             raise ValueError("Must call read() before retreiving data.")
         else:
-            return np.array([self.freq, self.f_data])
+            return np.array([self.freq, self.f_data]).T
 
     def get_time_data(self):
         """
         Get probe time data.
 
-        :returns: 2D numpy array where 1st array contains the
-                  time values and 2nd array contains the
-                  corresponding time data values.
+        :returns: 2D numpy array where each inner array is a
+                  time, value pair.  The result is sorted by
+                  ascending time.
         """
         if not self._data_readp():
             raise ValueError("Must call read() before retreiving data.")
         else:
-            return np.array([self.time, self.t_data])
+            return np.array([self.time, self.t_data]).T
 
     def _data_readp(self) -> bool:
         if self.freq is not None:
@@ -341,69 +341,69 @@ class MicrostripPort:
         :param freq: Frequency bins.  Should be the same frequency
             bins as the ones used in the excitation.
         """
+        self.freq = np.array(freq)
         [vprobe.read(sim_dir=sim_dir, freq=freq) for vprobe in self.vprobes]
         [iprobe.read(sim_dir=sim_dir, freq=freq) for iprobe in self.iprobes]
-        v = self.vprobes[1].get_freq_data()[1]
+        v = self.vprobes[1].get_freq_data()[:, 1]
         i = 0.5 * (
-            self.iprobes[0].get_freq_data()[1]
-            + self.iprobes[1].get_freq_data()[1]
+            self.iprobes[0].get_freq_data()[:, 1]
+            + self.iprobes[1].get_freq_data()[:, 1]
         )
         dv = (
-            self.vprobes[2].get_freq_data()[1]
-            - self.vprobes[0].get_freq_data()[1]
+            self.vprobes[2].get_freq_data()[:, 1]
+            - self.vprobes[0].get_freq_data()[:, 1]
         ) / (self.vprobes[2].box[0][0] - self.vprobes[0].box[0][0])
         di = (
-            self.iprobes[1].get_freq_data()[1]
-            - self.iprobes[0].get_freq_data()[1]
+            self.iprobes[1].get_freq_data()[:, 1]
+            - self.iprobes[0].get_freq_data()[:, 1]
         ) / (self.iprobes[1].box[0][0] - self.iprobes[0].box[0][0])
 
-        self.freq = freq
         self._calc_beta(v, i, dv, di)
         self._calc_z0(v, i, dv, di)
         k = 1 / np.sqrt(np.absolute(self.z0))
         self._calc_power_inc(k, v, i)
         self._calc_power_ref(k, v, i)
 
-    def characteristic_impedance(self) -> List[List[float]]:
+    def characteristic_impedance(self) -> np.array:
         """
         Get the characteristic impedance.
 
-        :returns: A 2D list where the first element contains the
-                  frequency bins and the second contains the
-                  characteristic impedance values corresponding to
-                  those frequency values.
+        :returns: A 2D numpy array where the first column contains
+                  frequency values and the second contains the
+                  corresponding port characteristic impedance values.
+                  It is sorted by ascending frequency.
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return [self.freq, np.absolute(self.z0)]
+        return np.concatenate(([self.freq], [np.absolute(self.z0)])).T
 
-    def incident_power(self) -> List[List[float]]:
+    def incident_power(self) -> np.array:
         """
         Get the incident power.  This is generally useful for
         calculating S-parameters.
 
-        :returns: A 2D list where the first element contains the
-                  frequency bins and the second contains the incident
-                  power values corresponding to those frequency
-                  values.
+        :returns: A 2D numpy array where the first column contains
+                  frequency values and the second contains the
+                  corresponding port incident power values.  It is
+                  sorted by ascending frequency.
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return [self.freq, np.absolute(self.P_inc)]
+        return np.concatenate(([self.freq], [np.absolute(self.P_inc)])).T
 
-    def reflected_power(self) -> List[List[float]]:
+    def reflected_power(self) -> np.array:
         """
         Get the reflected power.  This is generally useful for
         calculating S-parameters.
 
-        :returns: A 2D list where the first element contains the
-                  frequency bins and the second contains the reflected
-                  power values corresponding to those frequency
-                  values.
+        :returns: A 2D numpy array where the first column contains
+                  frequency values and the second contains the
+                  corresponding port reflected power values.  It is
+                  sorted by ascending frequency.
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return [self.freq, np.absolute(self.P_ref)]
+        return np.array(([self.freq], [np.absolute(self.P_ref)])).T
 
     def _data_readp(self) -> bool:
         """
