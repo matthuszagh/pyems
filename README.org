@@ -1,0 +1,19 @@
+* About
+The goal of pyems is to add a high-level interface to [[https://openems.de/start/index.php][OpenEMS]] that is
+as flexible as OpenEMS's own Python interface. The initial motivation
+for this package was to allow automatic mesh generation (which is
+supported, although in early stages). However, this also opens up a
+number of possibilites for new functionality that is impossible when
+the mesh is generated manually. For instance, we can perform parameter
+sweeps, or, similarly, find the optimal value of a parameter given
+some other target value.
+
+I also intend to write a number of complete simulations for common
+calculations. For instance, a user can call a function and get back
+the optimal microstrip trace width for a desired characteristic
+impedance. These simulations will be parameterizable so that they can
+be tailored for the specific use case. In the previous example, the
+user would need to pass several parameters for frequency range, PCB
+height, trace height, dielectric, etc. These simulations are located
+in the pyems/sims directory, which also serves as the examples
+directory for new users hoping to learn pyems's API.
