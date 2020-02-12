@@ -44,7 +44,7 @@ import numpy as np
 from openEMS.ports import UI_data
 from CSXCAD.CSXCAD import ContinuousStructure
 from CSXCAD.CSTransform import CSTransform
-from automesh.mesh import Mesh
+from pyems.automesh import Mesh
 
 
 def max_priority() -> int:

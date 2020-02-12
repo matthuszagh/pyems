@@ -5,7 +5,7 @@ import subprocess
 from CSXCAD.CSXCAD import ContinuousStructure
 from pyems.port import Port
 from pyems.structure import Structure
-from automesh.mesh import Mesh
+from pyems.automesh import Mesh
 
 
 class Network:
