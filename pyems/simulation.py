@@ -1,7 +1,9 @@
 import tempfile
 from typing import List
 import numpy as np
-from pathos.multiprocessing import ProcessingPool as Pool
+
+# from pathos.multiprocessing import ProcessingPool as Pool
+from multiprocessing import Pool
 from openEMS import openEMS
 from CSXCAD.CSXCAD import ContinuousStructure
 from pyems.network import Network
@@ -123,7 +125,7 @@ def freq_wavelength(freq: float) -> float:
     return 299792458 / freq
 
 
-def sweep(sims: List[Simulation], func, nodes: int = 11):
+def sweep(sims: List[Simulation], func, processes: int = 11):
     """
     Dispatch a number of simulations and then apply a function to each
     simulation after completion.  The function must take a single
@@ -149,6 +151,10 @@ def sweep(sims: List[Simulation], func, nodes: int = 11):
               in the return value list corresponds to
               `simulations[0]`, etc.
     """
-    pool = Pool(nodes=nodes)
-    ret_vals = list(pool.map(func, sims))
+    # TODO requires pickling support for openems cython types
+    # pool = Pool(processes=processes)
+    # ret_vals = list(pool.map(func, sims))
+    ret_vals = []
+    for sim in sims:
+        ret_vals.append(func(sim))
     return ret_vals
