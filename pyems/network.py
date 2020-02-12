@@ -35,12 +35,6 @@ class Network:
         self.csx_fd, self.csx_file = tempfile.mkstemp()
         atexit.register(self._cleanup_files)
 
-    def add_port(self, port: Port) -> None:
-        """
-        Add a `Port` to the network.
-        """
-        self.ports.append(port)
-
     def generate_mesh(
         self, lambda_min: float, expand_bounds: List[float]
     ) -> None:
@@ -69,6 +63,18 @@ class Network:
         Calculate all port parameters.
         """
         [port.calc(sim_dir=sim_dir, freq=freq) for port in self.ports]
+
+    def add_port(self, port: Port) -> None:
+        """
+        Add a `Port` to the network.
+        """
+        self.ports.append(port)
+
+    def get_ports(self) -> List[Port]:
+        """
+        Retrieve all network ports.
+        """
+        return self.ports
 
     def save(self, file_path: str) -> None:
         """

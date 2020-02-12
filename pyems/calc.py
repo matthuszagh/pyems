@@ -17,9 +17,6 @@ def wheeler_z0(w: float, t: float, er: float, h: float) -> float:
     :returns: characteristic impedance
     """
     z0 = 376.730313668
-    # w *= 1e-3
-    # t *= 1e-3
-    # h *= 1e-3
     weff = w + (
         (t * ((1 + (1 / er)) / (2 * np.pi)))
         * np.log(

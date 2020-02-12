@@ -1,6 +1,9 @@
-from bisect import bisect_left
 from typing import List, Tuple
 import numpy as np
+from pyems.utilities import (
+    sort_table_by_col,
+    table_interp_val,
+)
 
 
 class PCB:
@@ -22,16 +25,16 @@ class PCB:
         :param sub_epsr: substrate dielectric constant.  dictionary of
             frequency (Hz) and associated dielectric.
         :param sub_rho: volume resistivity (ohm*mm)
-        :param layer_sep: separations (in mm) between adjacent copper
+        :param layer_sep: separations (in m) between adjacent copper
             layers.  A list where the first value is the separation
             between the top layer and second layer, etc.  This is
             equivalently the substrate thickness.
         :param layer_thickness: thickness of each conductive layer (in
-            mm).  Again proceeds from top to bottom layer.
+            m).  Again proceeds from top to bottom layer.
         :param metal_conductivity: Metal layer conductivity in S/m.
         """
         self.layers = layers
-        self.sub_epsr = sorted(sub_epsr, key=lambda epsr: epsr[0])
+        self.sub_epsr = sort_table_by_col(np.array(sub_epsr), col=0)
         self.sub_rho = sub_rho
         self.layer_sep = layer_sep
         self.layer_thick = layer_thickness
@@ -44,26 +47,9 @@ class PCB:
 
         :param freq: frequency of interest (Hz)
 
-        :param returns: dielectric constant
+        :returns: dielectric constant
         """
-        if freq <= self.sub_epsr[0][0]:
-            return self.sub_epsr[0][1]
-        elif freq >= self.sub_epsr[-1][0]:
-            return self.sub_epsr[-1][1]
-
-        # perform linear interpolation
-        tup_low = bisect_left([x[0] for x in self.sub_epsr], freq)
-        if self.sub_epsr[tup_low][0] == freq:
-            return self.sub_epsr[tup_low][1]
-
-        tup_high = tup_low
-        tup_low -= 1
-        xlow = self.sub_epsr[tup_low][0]
-        xhigh = self.sub_epsr[tup_high][0]
-        ylow = self.sub_epsr[tup_low][1]
-        yhigh = self.sub_epsr[tup_high][1]
-        slope = (yhigh - ylow) / (xhigh - xlow)
-        return ylow + (slope * (freq - xlow))
+        return float(table_interp_val(self.sub_epsr, 1, freq, 0, True))
 
     def substrate_resistivity(self):
         """
@@ -95,11 +81,11 @@ common_pcbs = {
     "oshpark4": PCB(
         layers=4,
         sub_epsr=[
-            (100e6, 3.72),
-            (1e9, 3.69),
-            (2e9, 3.68),
-            (5e9, 3.64),
-            (10e9, 3.65),
+            [100e6, 3.72],
+            [1e9, 3.69],
+            [2e9, 3.68],
+            [5e9, 3.64],
+            [10e9, 3.65],
         ],
         sub_rho=4.4e14,
         layer_sep=np.multiply(1e-3, [0.1702, 1.1938, 0.1702]),

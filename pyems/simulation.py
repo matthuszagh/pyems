@@ -1,6 +1,7 @@
 import tempfile
 from typing import List
 import numpy as np
+from pathos.multiprocessing import ProcessingPool as Pool
 from openEMS import openEMS
 from CSXCAD.CSXCAD import ContinuousStructure
 from pyems.network import Network
@@ -122,18 +123,24 @@ def freq_wavelength(freq: float) -> float:
     return 299792458 / freq
 
 
-def sweep(simulations: List[Simulation], function_object):
+def sweep(sims: List[Simulation], func, nodes: int = 11):
     """
     Dispatch a number of simulations and then apply a function to each
     simulation after completion.  The function must take a single
     `Simulation` as an argument and return the result of interest.
 
-    :param simulations: A list of simulation objects to simulate and
-        then process with `function_object`.  It is up to the caller
-        to ensure that these simulation objects differ from one
-        another in the desired way.
-    :param function_object: The function object to apply to each
-        simulation after that simulation has completed.
+    :param sims: A list of simulation objects to simulate and then
+        process with `function_object`.  It is up to the caller to
+        ensure that these simulation objects differ from one another
+        in the desired way.
+    :param func: The function object to apply to each simulation after
+        that simulation has completed.  This must take a single
+        Simulation object as an argument.  Use partials when the
+        function takes more arguments.  Additionally, it must return
+        the sweep data point.
+    :param nodes: The number of simulations to run in parallel.
+        OpenEMS already performs multithreading and so it's best to
+        leave this significantly below the number of physical cores.
 
     :returns: A list where each entry is the return value of
               `function_object` applied to a single simulation from
@@ -142,3 +149,6 @@ def sweep(simulations: List[Simulation], function_object):
               in the return value list corresponds to
               `simulations[0]`, etc.
     """
+    pool = Pool(nodes=nodes)
+    ret_vals = list(pool.map(func, sims))
+    return ret_vals
