@@ -58,6 +58,12 @@ class Network:
         [port.snap_probes_to_mesh(mesh=self.mesh) for port in self.ports]
         self._write_csx()
 
+    def get_mesh(self) -> Mesh:
+        """
+        Get the network mesh.
+        """
+        return self.mesh
+
     def calc(self, sim_dir, freq) -> None:
         """
         Calculate all port parameters.
