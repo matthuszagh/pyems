@@ -41,10 +41,10 @@ after mesh generation.
 from abc import ABC, abstractmethod
 from typing import List
 import numpy as np
-from openEMS.ports import UI_data
 from CSXCAD.CSXCAD import ContinuousStructure
 from CSXCAD.CSTransform import CSTransform
 from pyems.automesh import Mesh
+from pyems.probe import Probe
 
 
 def max_priority() -> int:
@@ -60,137 +60,54 @@ class Port(ABC):
     """
     """
 
-    def __init__(
-        self,
-        csx: ContinuousStructure,
-        port_number: int,
-        start: List[float],
-        stop: List[float],
-        excite: bool = False,
-    ):
+    def incident_power(self) -> np.array:
         """
-        """
+        Get the incident power.  This is generally useful for
+        calculating S-parameters.
 
-    # def read(self, sim_path: str, ):
-
-
-class Probe:
-    """
-    """
-
-    unique_ctr = 0
-
-    def __init__(
-        self,
-        csx: ContinuousStructure,
-        box: List[List[float]],
-        p_type: int = 0,
-        norm_dir: int = None,
-        transform_args: List[str] = None,
-    ):
-        """
-        """
-        self.csx = csx
-        self.box = box
-        self.p_type = p_type
-        self.norm_dir = norm_dir
-        self.name = self._probe_name_prefix() + "t_" + str(self._get_ctr())
-        self._inc_ctr()
-        self.freq = None
-        self.time = None
-        self.t_data = None
-        self.f_data = None
-
-        if self.norm_dir is not None:
-            self.csx_probe = self.csx.AddProbe(
-                name=self.name, p_type=self.p_type, norm_dir=self.norm_dir
-            )
-        else:
-            self.csx_probe = self.csx.AddProbe(
-                name=self.name, p_type=self.p_type
-            )
-
-        self.csx_box = self.csx_probe.AddBox(
-            start=self.box[0], stop=self.box[1]
-        )
-        if transform_args:
-            self.csx_box.AddTransform(*transform_args)
-
-    def shift_x(self, new_xpos: float) -> None:
-        """
-        Shift the probe to a new x position.
-
-        :param new_xpos: New x-position.
-        """
-        self.csx_box.SetStart([new_xpos, self.box[0][1], self.box[0][2]])
-        self.csx_box.SetStop([new_xpos, self.box[1][1], self.box[1][2]])
-
-    def read(self, sim_dir, freq, signal_type="pulse"):
-        """
-        Read data recorded from the simulation and generate the time-
-        and frequency-series data.
-        """
-        self.freq = freq
-        data = UI_data([self.name], sim_dir, freq, signal_type)
-        self.time = data.ui_time[0]
-        self.t_data = data.ui_val[0]
-        self.f_data = data.ui_f_val[0]
-
-    def get_freq_data(self) -> np.array:
-        """
-        Get probe frequency data.
-
-        :returns: 2D numpy array where each inner array is a
-                  frequency, value pair.  The result is sorted by
-                  ascending frequency.
+        :returns: A 2D numpy array where the first column contains
+                  frequency values and the second contains the
+                  corresponding port incident power values.  It is
+                  sorted by ascending frequency.
         """
         if not self._data_readp():
-            raise ValueError("Must call read() before retreiving data.")
-        else:
-            return np.array([self.freq, self.f_data]).T
+            raise RuntimeError("Must call calc() before retreiving values.")
+        return np.concatenate(
+            ([self.get_freq()], [np.absolute(self._get_p_inc())])
+        ).T
 
-    def get_time_data(self):
+    def reflected_power(self) -> np.array:
         """
-        Get probe time data.
+        Get the reflected power.  This is generally useful for
+        calculating S-parameters.
 
-        :returns: 2D numpy array where each inner array is a
-                  time, value pair.  The result is sorted by
-                  ascending time.
+        :returns: A 2D numpy array where the first column contains
+                  frequency values and the second contains the
+                  corresponding port reflected power values.  It is
+                  sorted by ascending frequency.
         """
         if not self._data_readp():
-            raise ValueError("Must call read() before retreiving data.")
-        else:
-            return np.array([self.time, self.t_data]).T
+            raise RuntimeError("Must call calc() before retreiving values.")
+        return np.array(
+            ([self.get_freq()], [np.absolute(self._get_p_ref())])
+        ).T
 
     def _data_readp(self) -> bool:
-        if self.freq is not None:
-            return True
-        else:
-            return False
+        """
+        """
+        return self.get_freq() is not None
 
-    @classmethod
-    def _inc_ctr(cls):
-        cls.unique_ctr += 1
+    @abstractmethod
+    def get_freq(self) -> np.array:
+        pass
 
-    @classmethod
-    def _get_ctr(cls):
-        return cls.unique_ctr
+    @abstractmethod
+    def _get_p_inc(self) -> np.array:
+        pass
 
-    def _probe_name_prefix(self):
-        if self.p_type == 0:
-            return "v"
-        elif self.p_type == 1:
-            return "i"
-        elif self.p_type == 2:
-            return "e"
-        elif self.p_type == 3:
-            return "h"
-        elif self.p_type == 10:
-            return "wv"
-        elif self.p_type == 11:
-            return "wi"
-        else:
-            raise ValueError("invalid p_type")
+    @abstractmethod
+    def _get_p_ref(self) -> np.array:
+        pass
 
 
 class PlanarPort(Port):
@@ -199,12 +116,6 @@ class PlanarPort(Port):
     stripline, etc.).  Planar ports differ from one another in terms
     of the number, shape and position of their feeding and measurement
     probes.
-    """
-
-
-class MicrostripPort:
-    """
-    Microstrip transmission line port.
     """
 
     unique_ctr = 0
@@ -222,22 +133,22 @@ class MicrostripPort:
         rotate: float = 0.0,
     ):
         """
-        Microstrip port.
+        Planar port.
 
-        The shape of the microstrip trace is rectangular in the xy
-        plane.  The first corner is determined by the x,y coordinates
-        of `start_corner` and the opposite corner is determined by the
+        The shape of the planar trace is rectangular in the xy plane.
+        The first corner is determined by the x,y coordinates of
+        `start_corner` and the opposite corner is determined by the
         x,y coordinates of `stop_corner`.  The z-position of the trace
         is determined by the z coordinate of `stop_corner`.  The z
         coordinate of `start_corner` gives the z position of the PCB
         ground plane beneath the top layer.  Specifically, it
         determines the height of the feed and measurement probes.
 
-        By default, the microstrip line extends in length from xmin to
-        xmax.  This behavior can be changed with the `rotate`
-        parameter, which will rotate the structure at an angle about
-        the z-axis.  It is not currently possible to create a
-        microstrip port that is not in the xy-plane.
+        By default, the trace extends in length from xmin to xmax.
+        This behavior can be changed with the `rotate` parameter,
+        which will rotate the structure at an angle about the z-axis.
+        It is not currently possible to create a microstrip port that
+        is not in the xy-plane.
 
         Excitation feeds are placed relative to `start_corner`'s x
         position.  See `feed_shift` for the relative positioning.
@@ -253,7 +164,7 @@ class MicrostripPort:
             z-component in the 2nd inner list.  The z-value of the 1st
             list corresponds to the position of the ground plane.
             This is used for determining the position/length of feed
-            and measurement probes. All dimensions are in mm.
+            and measurement probes.  All dimensions are in mm.
         :param thickness: Metal trace thickness (in mm).
         :param conductivity: Metal conductivity (in S/m).  The default
             uses the conductivity of copper.
@@ -375,40 +286,22 @@ class MicrostripPort:
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return np.concatenate(([self.freq], [np.absolute(self.z0)])).T
+        return np.concatenate(([self.get_freq()], [np.absolute(self.z0)])).T
 
-    def incident_power(self) -> np.array:
+    def get_freq(self) -> np.array:
         """
-        Get the incident power.  This is generally useful for
-        calculating S-parameters.
+        """
+        return self.freq
 
-        :returns: A 2D numpy array where the first column contains
-                  frequency values and the second contains the
-                  corresponding port incident power values.  It is
-                  sorted by ascending frequency.
+    def _get_p_inc(self) -> np.array:
         """
-        if not self._data_readp():
-            raise RuntimeError("Must call calc() before retreiving values.")
-        return np.concatenate(([self.freq], [np.absolute(self.P_inc)])).T
+        """
+        return self.P_inc
 
-    def reflected_power(self) -> np.array:
-        """
-        Get the reflected power.  This is generally useful for
-        calculating S-parameters.
-
-        :returns: A 2D numpy array where the first column contains
-                  frequency values and the second contains the
-                  corresponding port reflected power values.  It is
-                  sorted by ascending frequency.
-        """
-        if not self._data_readp():
-            raise RuntimeError("Must call calc() before retreiving values.")
-        return np.array(([self.freq], [np.absolute(self.P_ref)])).T
-
-    def _data_readp(self) -> bool:
+    def _get_p_ref(self) -> np.array:
         """
         """
-        return self.freq is not None
+        return self.P_ref
 
     def _calc_beta(self, v, i, dv, di) -> None:
         """
@@ -469,7 +362,7 @@ class MicrostripPort:
 
     def _set_trace(self) -> None:
         """
-        Set microstrip trace.
+        Set trace.
         """
         trace = self.csx.AddConductingSheet(
             "ConductingSheet",
@@ -484,49 +377,14 @@ class MicrostripPort:
         )
         trace_box.AddTransform(*self.transform_args)
 
-    def _set_feed(self) -> None:
+    def _get_trace_box(self) -> List[List[float]]:
         """
-        Set excitation feed.
+        Get the pre-transformed trace box.
         """
-        if self.excite:
-            excitation = self.csx.AddExcitation(
-                name="excite_" + str(self._get_inc_ctr()),
-                exc_type=0,
-                exc_val=self._get_excite_dir(),
-            )
-            feed_box = self._get_feed_box()
-            self.excitation_box = excitation.AddBox(
-                start=feed_box[0], stop=feed_box[1], priority=max_priority()
-            )
-            self.excitation_box.AddTransform(*self.transform_args)
-
-            if self.feed_resistance:
-                feed_res = self.csx.AddLumpedElement(
-                    name="resist_" + str(self._get_ctr()),
-                    ny=2,
-                    caps=True,
-                    R=self.feed_resistance,
-                )
-                self.feed_res_box = feed_res.AddBox(
-                    start=feed_box[0], stop=feed_box[1]
-                )
-                self.feed_res_box.AddTransform(*self.transform_args)
-
-    def _snap_feed_to_mesh(self, mesh) -> None:
-        """
-        """
-        if self.excite:
-            old_start = self.excitation_box.GetStart()
-            old_stop = self.excitation_box.GetStop()
-            _, xpos = mesh.nearest_mesh_line(0, old_start[0])
-            self.excitation_box.SetStart([xpos, old_start[1], old_start[2]])
-            self.excitation_box.SetStop([xpos, old_stop[1], old_stop[2]])
-            if self.feed_resistance:
-                old_start = self.feed_res_box.GetStart()
-                old_stop = self.feed_res_box.GetStop()
-                _, xpos = mesh.nearest_mesh_line(0, old_start[0])
-                self.feed_res_box.SetStart([xpos, old_start[1], old_start[2]])
-                self.feed_res_box.SetStop([xpos, old_stop[1], old_stop[2]])
+        return [
+            [self.box[0][0], self.box[0][1], self.box[1][2]],
+            [self.box[1][0], self.box[1][1], self.box[1][2]],
+        ]
 
     def _set_measurement_probes(self):
         """
@@ -573,6 +431,84 @@ class MicrostripPort:
             for xpos in ixpos
         ]
 
+    @abstractmethod
+    def _set_feed(self) -> None:
+        pass
+
+    @abstractmethod
+    def _snap_feed_to_mesh(self) -> None:
+        pass
+
+    @classmethod
+    def _get_ctr(cls):
+        """
+        """
+        return cls.unique_ctr
+
+    @classmethod
+    def _inc_ctr(cls):
+        """
+        """
+        cls.unique_ctr += 1
+
+    @classmethod
+    def _get_inc_ctr(cls):
+        """
+        """
+        ctr = cls._get_ctr()
+        cls._inc_ctr()
+        return ctr
+
+
+class MicrostripPort(PlanarPort):
+    """
+    Microstrip transmission line port.
+    """
+
+    def _set_feed(self) -> None:
+        """
+        Set excitation feed.
+        """
+        if self.excite:
+            excitation = self.csx.AddExcitation(
+                name="excite_" + str(self._get_inc_ctr()),
+                exc_type=0,
+                exc_val=self._get_excite_dir(),
+            )
+            feed_box = self._get_feed_box()
+            self.excitation_box = excitation.AddBox(
+                start=feed_box[0], stop=feed_box[1], priority=max_priority()
+            )
+            self.excitation_box.AddTransform(*self.transform_args)
+
+            if self.feed_resistance:
+                feed_res = self.csx.AddLumpedElement(
+                    name="resist_" + str(self._get_ctr()),
+                    ny=2,
+                    caps=True,
+                    R=self.feed_resistance,
+                )
+                self.feed_res_box = feed_res.AddBox(
+                    start=feed_box[0], stop=feed_box[1]
+                )
+                self.feed_res_box.AddTransform(*self.transform_args)
+
+    def _snap_feed_to_mesh(self, mesh) -> None:
+        """
+        """
+        if self.excite:
+            old_start = self.excitation_box.GetStart()
+            old_stop = self.excitation_box.GetStop()
+            _, xpos = mesh.nearest_mesh_line(0, old_start[0])
+            self.excitation_box.SetStart([xpos, old_start[1], old_start[2]])
+            self.excitation_box.SetStop([xpos, old_stop[1], old_stop[2]])
+            if self.feed_resistance:
+                old_start = self.feed_res_box.GetStart()
+                old_stop = self.feed_res_box.GetStop()
+                _, xpos = mesh.nearest_mesh_line(0, old_start[0])
+                self.feed_res_box.SetStart([xpos, old_start[1], old_start[2]])
+                self.feed_res_box.SetStop([xpos, old_stop[1], old_stop[2]])
+
     def _get_excite_dir(self) -> List[int]:
         """
         """
@@ -593,31 +529,105 @@ class MicrostripPort:
             [xpos, self.box[1][1], self.box[1][2]],
         ]
 
-    def _get_trace_box(self) -> List[List[float]]:
-        """
-        Get the pre-transformed trace box.
-        """
-        return [
-            [self.box[0][0], self.box[0][1], self.box[1][2]],
-            [self.box[1][0], self.box[1][1], self.box[1][2]],
-        ]
 
-    @classmethod
-    def _get_inc_ctr(cls):
-        """
-        """
-        ctr = cls._get_ctr()
-        cls._inc_ctr()
-        return ctr
+class CPWPort(PlanarPort):
+    """
+    Coplanar waveguide transmission line port.
+    """
 
-    @classmethod
-    def _get_ctr(cls):
+    def __init__(
+        self,
+        csx: ContinuousStructure,
+        bounding_box: List[List[float]],
+        gap: float,
+        thickness: float,
+        conductivity: float = 5.8e7,
+        excite: bool = False,
+        feed_resistance: float = None,
+        feed_shift: float = 0.2,
+        measurement_shift: float = 0.5,
+        rotate: float = 0.0,
+    ):
         """
+        :param gap: Gap between adjacent ground planes and trace (in mm).
         """
-        return cls.unique_ctr
+        self.gap = gap
+        super().__init__(
+            csx,
+            bounding_box,
+            thickness,
+            conductivity,
+            excite,
+            feed_resistance,
+            feed_shift,
+            measurement_shift,
+            rotate,
+        )
 
-    @classmethod
-    def _inc_ctr(cls):
+    def _set_feed(self) -> None:
+        """
+        Set excitation feed.
+        """
+        if self.excite:
+            excitations = [
+                self.csx.AddExcitation(
+                    name="excite_" + str(self._get_inc_ctr()),
+                    exc_type=0,
+                    exc_val=direction,
+                )
+                for direction in [[0, 1, 0], [0, -1, 0]]
+            ]
+            feed_xpos = self.box[0][0] + (
+                self.feed_shift * (self.box[1][0] - self.box[0][0])
+            )
+            feed_boxes = [
+                [[feed_xpos, ystart, 0], [feed_xpos, yend, 0]]
+                for ystart, yend in zip(
+                    [self.box[0][1] - self.gap, self.box[1][1] + self.gap],
+                    [self.box[0][1], self.box[1][1]],
+                )
+            ]
+            self.excitation_boxes = [
+                excitation.AddBox(
+                    start=box[0], stop=box[1], priority=max_priority()
+                )
+                for excitation, box in zip(excitations, feed_boxes)
+            ]
+            [
+                exc_box.AddTransform(*self.transform_args)
+                for exc_box in self.excitation_boxes
+            ]
+
+            if self.feed_resistance:
+                feed_res = self.csx.AddLumpedElement(
+                    name="resist_" + str(self._get_ctr()),
+                    ny=2,
+                    caps=True,
+                    R=2 * self.feed_resistance,  # parallel equiv resistance
+                )
+                self.feed_res_boxes = [
+                    feed_res.AddBox(start=box[0], stop=box[1])
+                    for box in feed_boxes
+                ]
+                [
+                    res_box.AddTransform(*self.transform_args)
+                    for res_box in self.feed_res_boxes
+                ]
+
+    def _snap_feed_to_mesh(self, mesh) -> None:
         """
         """
-        cls.unique_ctr += 1
+        if self.excite:
+            for excitation_box in self.excitation_boxes:
+                old_start = excitation_box.GetStart()
+                old_stop = excitation_box.GetStop()
+                _, xpos = mesh.nearest_mesh_line(0, old_start[0])
+                excitation_box.SetStart([xpos, old_start[1], old_start[2]])
+                excitation_box.SetStop([xpos, old_stop[1], old_stop[2]])
+            if self.feed_resistance:
+                for feed_res_box in self.feed_res_boxes:
+                    old_start = feed_res_box.GetStart()
+                    old_stop = feed_res_box.GetStop()
+                    _, xpos = mesh.nearest_mesh_line(0, old_start[0])
+                    feed_res_box.SetStart([xpos, old_start[1], old_start[2]])
+                    feed_res_box.SetStop([xpos, old_stop[1], old_stop[2]])
