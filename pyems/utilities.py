@@ -89,3 +89,12 @@ def table_interp_val(
     yhigh = arr[ins_idx][target_col]
 
     return interp_lin(sel_val, xlow, xhigh, ylow, yhigh)
+
+
+def max_priority() -> int:
+    """
+    Priority that won't be overriden.
+
+    :returns: highest priority.
+    """
+    return 999

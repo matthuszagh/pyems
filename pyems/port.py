@@ -45,15 +45,7 @@ from CSXCAD.CSXCAD import ContinuousStructure
 from CSXCAD.CSTransform import CSTransform
 from pyems.automesh import Mesh
 from pyems.probe import Probe
-
-
-def max_priority() -> int:
-    """
-    Priority that won't be overriden.
-
-    :returns: highest priority.
-    """
-    return 999
+from pyems.utilities import max_priority
 
 
 class Port(ABC):
@@ -549,7 +541,7 @@ class CPWPort(PlanarPort):
         rotate: float = 0.0,
     ):
         """
-        :param gap: Gap between adjacent ground planes and trace (in mm).
+        :param gap: Gap between adjacent ground planes and trace (in m).
         """
         self.gap = gap
         super().__init__(
