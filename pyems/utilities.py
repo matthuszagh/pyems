@@ -4,23 +4,43 @@ import numpy as np
 
 
 def pretty_print(
-    data: List[List[float]], col_names=List[str], out_file=sys.stdout
+    data: np.array, col_names: List[str], prec: List[int], out_file=sys.stdout,
 ) -> None:
     """
+    Print table (2D numpy array) in appropriately-widthed columns.
     """
-    col_width = (
-        int(np.log10(np.amax([np.amax(sublist) for sublist in data]))) + 5
-    )
-    for col in col_names:
-        out_file.write("{:{width}}".format(col, width=col_width))
+    col_widths = [
+        int(_val_digits(np.amax(data[:, col])) + prec[col] + 2)
+        for col in range(len(col_names))
+    ]
+    for i, col in enumerate(col_names):
+        out_file.write("{:{width}}".format(col, width=col_widths[i]))
     out_file.write("\n")
 
-    for row in range(len(data[0])):
-        for col in range(len(data)):
+    for row in data:
+        for i, val in enumerate(row):
             out_file.write(
-                "{:<{width}.2f}".format(data[col][row], width=col_width)
+                "{:<{width}.{prec}f}".format(
+                    val, width=col_widths[i], prec=prec[i]
+                )
             )
         out_file.write("\n")
+
+
+def _val_digits(val: float) -> int:
+    """
+    Compute the number of decimal digits needed to display the
+    integral portion of a value.
+    """
+    extra_digits = 0
+    if val < 0:
+        val *= -1
+        extra_digits += 1
+
+    if val < 1:
+        return extra_digits + 1
+
+    return int(np.log10(val)) + extra_digits
 
 
 def sort_table_by_col(arr: np.array, col: int = 0):
