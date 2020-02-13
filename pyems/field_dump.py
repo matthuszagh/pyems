@@ -1,5 +1,6 @@
 from typing import List
 import tempfile
+import shutil
 import os
 import subprocess
 import numpy as np
@@ -16,7 +17,7 @@ class FieldDump:
         """
         """
         self.csx = csx
-        self.unit = 1e-3
+        self.unit = 1
         self.box = np.multiply(self.unit, box)
         self.field_type = field_type
         self.dir_path = tempfile.mkdtemp()
@@ -29,6 +30,8 @@ class FieldDump:
     def save(self, dir_path: str):
         """
         """
+        # TODO doesn't work
+        shutil.copytree(self.dir_path, dir_path)
 
     def view(self):
         """
