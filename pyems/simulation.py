@@ -1,8 +1,6 @@
 import tempfile
 from typing import List
 import numpy as np
-
-# from pathos.multiprocessing import ProcessingPool as Pool
 from multiprocessing import Pool
 from openEMS import openEMS
 from CSXCAD.CSXCAD import ContinuousStructure
