@@ -10,7 +10,7 @@ def pretty_print(
     Print table (2D numpy array) in appropriately-widthed columns.
     """
     col_widths = [
-        int(_val_digits(np.amax(data[:, col])) + prec[col] + 2)
+        int(_val_digits(np.amax(np.absolute(data[:, col]))) + prec[col] + 2)
         for col in range(len(col_names))
     ]
     for i, col in enumerate(col_names):
