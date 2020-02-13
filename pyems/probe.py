@@ -2,6 +2,7 @@ from typing import List
 from CSXCAD.CSXCAD import ContinuousStructure
 import numpy as np
 from openEMS.ports import UI_data
+from pyems.automesh import Mesh
 
 
 class Probe:
@@ -25,12 +26,17 @@ class Probe:
         self.p_type = p_type
         self.norm_dir = norm_dir
         self.name = self._probe_name_prefix() + "t_" + str(self._get_ctr())
+        self.transform_args = transform_args
         self._inc_ctr()
         self.freq = None
         self.time = None
         self.t_data = None
         self.f_data = None
+        self.csx_box = None
 
+        self._set_probe()
+
+    def _set_probe(self) -> None:
         if self.norm_dir is not None:
             self.csx_probe = self.csx.AddProbe(
                 name=self.name, p_type=self.p_type, norm_dir=self.norm_dir
@@ -43,17 +49,35 @@ class Probe:
         self.csx_box = self.csx_probe.AddBox(
             start=self.box[0], stop=self.box[1]
         )
-        if transform_args:
-            self.csx_box.AddTransform(*transform_args)
+        if self.transform_args:
+            self.csx_box.AddTransform(*self.transform_args)
 
-    def shift_x(self, new_xpos: float) -> None:
+    def snap_to_mesh(self, mesh) -> None:
         """
-        Shift the probe to a new x position.
+        Align probe with the provided mesh.  It is necessary to call
+        this function in order to get correct simulation results.
 
-        :param new_xpos: New x-position.
+        :param mesh: Mesh object.
         """
-        self.csx_box.SetStart([new_xpos, self.box[0][1], self.box[0][2]])
-        self.csx_box.SetStop([new_xpos, self.box[1][1], self.box[1][2]])
+        for dim in [0, 1, 2]:
+            self._snap_dim(mesh, dim)
+
+    def _snap_dim(self, mesh: Mesh, dim: int) -> None:
+        """
+        Align probe to mesh for a given dimension.  This function will
+        only have an effect when the provided dimension has zero size.
+
+        :param mesh: Mesh object.
+        :param dim: Dimension.  0, 1, 2 for x, y, z.
+        """
+        if self.box[0][dim] == self.box[1][dim]:
+            start = self.csx_box.GetStart()
+            stop = self.csx_box.GetStop()
+            _, pos = mesh.nearest_mesh_line(dim, start[dim])
+            start[dim] = pos
+            stop[dim] = pos
+            self.csx_box.SetStart(start)
+            self.csx_box.SetStop(stop)
 
     def read(self, sim_dir, freq, signal_type="pulse"):
         """

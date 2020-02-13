@@ -48,6 +48,134 @@ from pyems.probe import Probe
 from pyems.utilities import max_priority
 
 
+class Feed:
+    """
+    Feed excitation.
+    """
+
+    unique_ctr = 0
+
+    def __init__(
+        self,
+        csx: ContinuousStructure,
+        box: List[List[float]],
+        excite_direction: List[float],
+        resistance: float = None,
+        transform_args=None,
+    ):
+        """
+        :param csx: CSX object.
+        :param box: Rectangular box giving feed dimensions.  [[x1, y1,
+            z1], [x2, y2, z2]]
+        :param excite_direction: The direction that the excitation
+            propagates.  Provide a list of 3 values corresponding to
+            x, y, and z.  For instance, [0, 0, 1] would propagate in
+            the +z direction.
+        :param resistance: Feed resistance.  If left as None, which is
+            the default, the feed will have infinite impedance.  In
+            this case make sure to terminate the structure in PMLs.
+        :param transform_args: Any transformations to apply to feed.
+        """
+        self.csx = csx
+        self.box = box
+        self.resistance = resistance
+        self.excite_direction = excite_direction
+        self.transform_args = transform_args
+        self.excitation_box = None
+        self.res_box = None
+
+        self.set_feed()
+
+    def set_feed(self) -> None:
+        """
+        Set excitation feed.
+        """
+        excitation = self.csx.AddExcitation(
+            name="excite_" + str(self._get_inc_ctr()),
+            exc_type=0,
+            exc_val=self.excite_direction,
+        )
+        self.excitation_box = excitation.AddBox(
+            start=self.box[0], stop=self.box[1], priority=max_priority()
+        )
+        self.excitation_box.AddTransform(*self.transform_args)
+
+        if self.resistance:
+            res = self.csx.AddLumpedElement(
+                name="resist_" + str(self._get_ctr()),
+                ny=self._resist_dir(),
+                caps=True,
+                R=self.resistance,
+            )
+            self.res_box = res.AddBox(start=self.box[0], stop=self.box[1])
+            self.res_box.AddTransform(*self.transform_args)
+
+    def snap_to_mesh(self, mesh) -> None:
+        """
+        Align feed with the provided mesh.  It is necessary to call
+        this function in order to get correct simulation results.
+
+        :param mesh: Mesh object.
+        """
+        for dim in [0, 1, 2]:
+            self._snap_dim(mesh, dim)
+
+    def _snap_dim(self, mesh: Mesh, dim: int) -> None:
+        """
+        Align feed to mesh for a given dimension.  This function will
+        only have an effect when the provided dimension has zero size.
+
+        :param mesh: Mesh object.
+        :param dim: Dimension.  0, 1, 2 for x, y, z.
+        """
+        if self.box[0][dim] == self.box[1][dim]:
+            start = self.excitation_box.GetStart()
+            stop = self.excitation_box.GetStop()
+            _, pos = mesh.nearest_mesh_line(dim, start[dim])
+            start[dim] = pos
+            stop[dim] = pos
+            self.excitation_box.SetStart(start)
+            self.excitation_box.SetStop(stop)
+            if self.resistance:
+                self.res_box.SetStart(start)
+                self.res_box.SetStop(stop)
+
+    def _resist_dir(self) -> int:
+        """
+        AddLumpedElement requires a direction in the form of 0, 1, or
+        2. Get this value from the excitation direction.
+        """
+        return abs(self.excite_direction[1] + (2 * self.excite_direction[2]))
+
+    def _get_excite_dir(self) -> List[int]:
+        """
+        """
+        if self.box[0][2] < self.box[1][2]:
+            return [0, 0, 1]
+        else:
+            return [0, 0, -1]
+
+    @classmethod
+    def _get_ctr(cls):
+        """
+        """
+        return cls.unique_ctr
+
+    @classmethod
+    def _inc_ctr(cls):
+        """
+        """
+        cls.unique_ctr += 1
+
+    @classmethod
+    def _get_inc_ctr(cls):
+        """
+        """
+        ctr = cls._get_ctr()
+        cls._inc_ctr()
+        return ctr
+
+
 class Port(ABC):
     """
     """
@@ -205,35 +333,21 @@ class PlanarPort(Port):
         self.beta = None
         self.P_inc = None
         self.P_ref = None
-        self.feed_res_box = None
-        self.excitation_box = None
+        self.feeds = []
 
         self._set_trace()
         self._set_feed()
         self._set_measurement_probes()
 
-    def snap_probes_to_mesh(self, mesh: Mesh) -> None:
+    def snap_to_mesh(self, mesh: Mesh) -> None:
         """
-        Position the probes so that they're located correctly in
-        relation to the mesh.  You must call this in order to get
+        Position the probes and feed so that they're located correctly
+        in relation to the mesh.  You must call this in order to get
         correct simulation behavior.
         """
-        # TODO this probably doesn't work when rotations are used.
-        mid_idx, mid_xpos = mesh.nearest_mesh_line(
-            0, self.vprobes[1].box[0][0]
-        )
-        new_vxpos = [
-            mesh.mesh_lines[0][mid_idx - 1],
-            mid_xpos,
-            mesh.mesh_lines[0][mid_idx + 1],
-        ]
-        new_ixpos = [
-            (new_vxpos[0] + new_vxpos[1]) / 2,
-            (new_vxpos[1] + new_vxpos[2]) / 2,
-        ]
-        [vprobe.shift_x(xpos) for vprobe, xpos in zip(self.vprobes, new_vxpos)]
-        [iprobe.shift_x(xpos) for iprobe, xpos in zip(self.iprobes, new_ixpos)]
-        self._snap_feed_to_mesh(mesh)
+        [vprobe.snap_to_mesh(mesh) for vprobe in self.vprobes]
+        [iprobe.snap_to_mesh(mesh) for iprobe in self.iprobes]
+        [feed.snap_to_mesh(mesh) for feed in self.feeds]
 
     def calc(self, sim_dir, freq) -> None:
         """
@@ -427,10 +541,6 @@ class PlanarPort(Port):
     def _set_feed(self) -> None:
         pass
 
-    @abstractmethod
-    def _snap_feed_to_mesh(self) -> None:
-        pass
-
     @classmethod
     def _get_ctr(cls):
         """
@@ -462,44 +572,14 @@ class MicrostripPort(PlanarPort):
         Set excitation feed.
         """
         if self.excite:
-            excitation = self.csx.AddExcitation(
-                name="excite_" + str(self._get_inc_ctr()),
-                exc_type=0,
-                exc_val=self._get_excite_dir(),
+            feed = Feed(
+                self.csx,
+                self._get_feed_box(),
+                [0, 0, 1],
+                self.feed_resistance,
+                self.transform_args,
             )
-            feed_box = self._get_feed_box()
-            self.excitation_box = excitation.AddBox(
-                start=feed_box[0], stop=feed_box[1], priority=max_priority()
-            )
-            self.excitation_box.AddTransform(*self.transform_args)
-
-            if self.feed_resistance:
-                feed_res = self.csx.AddLumpedElement(
-                    name="resist_" + str(self._get_ctr()),
-                    ny=2,
-                    caps=True,
-                    R=self.feed_resistance,
-                )
-                self.feed_res_box = feed_res.AddBox(
-                    start=feed_box[0], stop=feed_box[1]
-                )
-                self.feed_res_box.AddTransform(*self.transform_args)
-
-    def _snap_feed_to_mesh(self, mesh) -> None:
-        """
-        """
-        if self.excite:
-            old_start = self.excitation_box.GetStart()
-            old_stop = self.excitation_box.GetStop()
-            _, xpos = mesh.nearest_mesh_line(0, old_start[0])
-            self.excitation_box.SetStart([xpos, old_start[1], old_start[2]])
-            self.excitation_box.SetStop([xpos, old_stop[1], old_stop[2]])
-            if self.feed_resistance:
-                old_start = self.feed_res_box.GetStart()
-                old_stop = self.feed_res_box.GetStop()
-                _, xpos = mesh.nearest_mesh_line(0, old_start[0])
-                self.feed_res_box.SetStart([xpos, old_start[1], old_start[2]])
-                self.feed_res_box.SetStop([xpos, old_stop[1], old_stop[2]])
+            self.feeds.append(feed)
 
     def _get_excite_dir(self) -> List[int]:
         """
@@ -561,65 +641,32 @@ class CPWPort(PlanarPort):
         Set excitation feed.
         """
         if self.excite:
-            excitations = [
-                self.csx.AddExcitation(
-                    name="excite_" + str(self._get_inc_ctr()),
-                    exc_type=0,
-                    exc_val=direction,
+            if self.feed_resistance:
+                self.feed_resistance *= 2  # use 2 parallel feeds
+
+            for box, excite_dir in zip(
+                self._get_feed_boxes(), [[0, 1, 0], [0, -1, 0]]
+            ):
+                feed = Feed(
+                    self.csx,
+                    box,
+                    excite_dir,
+                    self.feed_resistance,
+                    self.transform_args,
                 )
-                for direction in [[0, 1, 0], [0, -1, 0]]
-            ]
-            feed_xpos = self.box[0][0] + (
-                self.feed_shift * (self.box[1][0] - self.box[0][0])
+                self.feeds.append(feed)
+
+    def _get_feed_boxes(self) -> None:
+        """
+        """
+        feed_xpos = self.box[0][0] + (
+            self.feed_shift * (self.box[1][0] - self.box[0][0])
+        )
+        feed_boxes = [
+            [[feed_xpos, ystart, 0], [feed_xpos, yend, 0]]
+            for ystart, yend in zip(
+                [self.box[0][1] - self.gap, self.box[1][1] + self.gap],
+                [self.box[0][1], self.box[1][1]],
             )
-            feed_boxes = [
-                [[feed_xpos, ystart, 0], [feed_xpos, yend, 0]]
-                for ystart, yend in zip(
-                    [self.box[0][1] - self.gap, self.box[1][1] + self.gap],
-                    [self.box[0][1], self.box[1][1]],
-                )
-            ]
-            self.excitation_boxes = [
-                excitation.AddBox(
-                    start=box[0], stop=box[1], priority=max_priority()
-                )
-                for excitation, box in zip(excitations, feed_boxes)
-            ]
-            [
-                exc_box.AddTransform(*self.transform_args)
-                for exc_box in self.excitation_boxes
-            ]
-
-            if self.feed_resistance:
-                feed_res = self.csx.AddLumpedElement(
-                    name="resist_" + str(self._get_ctr()),
-                    ny=2,
-                    caps=True,
-                    R=2 * self.feed_resistance,  # parallel equiv resistance
-                )
-                self.feed_res_boxes = [
-                    feed_res.AddBox(start=box[0], stop=box[1])
-                    for box in feed_boxes
-                ]
-                [
-                    res_box.AddTransform(*self.transform_args)
-                    for res_box in self.feed_res_boxes
-                ]
-
-    def _snap_feed_to_mesh(self, mesh) -> None:
-        """
-        """
-        if self.excite:
-            for excitation_box in self.excitation_boxes:
-                old_start = excitation_box.GetStart()
-                old_stop = excitation_box.GetStop()
-                _, xpos = mesh.nearest_mesh_line(0, old_start[0])
-                excitation_box.SetStart([xpos, old_start[1], old_start[2]])
-                excitation_box.SetStop([xpos, old_stop[1], old_stop[2]])
-            if self.feed_resistance:
-                for feed_res_box in self.feed_res_boxes:
-                    old_start = feed_res_box.GetStart()
-                    old_stop = feed_res_box.GetStop()
-                    _, xpos = mesh.nearest_mesh_line(0, old_start[0])
-                    feed_res_box.SetStart([xpos, old_start[1], old_start[2]])
-                    feed_res_box.SetStop([xpos, old_stop[1], old_stop[2]])
+        ]
+        return feed_boxes

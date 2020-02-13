@@ -55,7 +55,7 @@ class Network:
             )
             self.mesh.generate_mesh()
 
-        [port.snap_probes_to_mesh(mesh=self.mesh) for port in self.ports]
+        [port.snap_to_mesh(mesh=self.mesh) for port in self.ports]
         self._write_csx()
 
     def get_mesh(self) -> Mesh:
