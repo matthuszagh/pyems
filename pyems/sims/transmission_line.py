@@ -2,7 +2,7 @@
 A collection of ready-made simulations related to transmission lines.
 """
 
-from typing import List
+import sys
 from functools import partial
 import numpy as np
 import matplotlib.pyplot as plt
@@ -209,10 +209,12 @@ class GCPWSimulation:
         half_bandwidth: float,
         z0_target: float,
         center_width: float = None,
+        gap: float = None,
         width_dev_factor: float = 0.1,
         num_points: int = 11,
         processes: int = 11,
         plot: bool = False,
+        out_file=sys.stdout,
     ):
         """
         """
@@ -229,13 +231,15 @@ class GCPWSimulation:
             num_points,
         )
         sims = [
-            self._gen_gcpw_sim(center_freq, half_bandwidth, width, pcb)
+            self._gen_gcpw_sim(center_freq, half_bandwidth, width, gap, pcb)
             for width in widths
         ]
         func = partial(_imped_at_freq, freq=center_freq)
         sim_vals = sweep(sims=sims, func=func, processes=processes)
         pretty_print(
-            data=[widths, sim_vals], col_names=["width", "sim"],
+            data=[widths, sim_vals],
+            col_names=["width", "sim"],
+            out_file=out_file,
         )
         if plot:
             plt.figure()
