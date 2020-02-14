@@ -23,7 +23,9 @@ class FieldDump:
         self.dir_path = tempfile.mkdtemp()
 
         self.field_dump = self.csx.AddDump(
-            os.path.join(self.dir_path, "Et_"), file_type=self.field_type
+            os.path.join(self.dir_path, "Et_"),
+            dump_type=self.field_type,
+            file_type=0,
         )
         self.field_dump.AddBox(self.box[0], self.box[1])
 
