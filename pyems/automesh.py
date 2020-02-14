@@ -2,6 +2,7 @@ from typing import List
 from bisect import bisect_left, insort_left
 import numpy as np
 from pyems.utilities import float_cmp
+from CSXCAD.CSXCAD import ContinuousStructure
 
 
 class Mesh:
@@ -14,15 +15,14 @@ class Mesh:
 
     def __init__(
         self,
-        csx,
-        lmin,
+        csx: ContinuousStructure,
+        lmin: float,
         mres=1 / 20,
         sres=1 / 10,
-        smooth=1.5,
-        unit=1,
-        min_lines=9,
-        expand_bounds=[20, 20, 20, 20, 20, 20],
-        strict_bounds: List[List[float]] = None,
+        smooth: List[float] = [1.5, 1.5, 1.5],
+        min_lines: int = 9,
+        expand_bounds: List[float] = [20, 20, 20, 20, 20, 20],
+        simulation_bounds: List[float] = None,
     ):
         """
         :param csx: the CSXCAD structure (return value of
@@ -34,8 +34,10 @@ class Mesh:
         :param sres: the substrate resolution, specified as a factor
             of lmin.
         :param smooth: the factor by which adjacent cells are allowed
-            to differ in size.
-        :param unit: the mesh size unit, which defaults to m.
+            to differ in size.  This should be a list of 3 factors,
+            one for each dimension.  This is useful if, for instance,
+            you want the mesh to be smoother in the direction of
+            signal propagation.
         :param min_lines: the minimum number of mesh lines for a
             primitive's dimensional length, unless the length of that
             primitive's dimension is precisely 0.
@@ -49,10 +51,10 @@ class Mesh:
             that the user will only define physical structures (e.g.
             metal layers, substrate, etc.) and will use this to set
             the simulation box.
-        :param strict_bounds: If set this will enforce a strict total
-            mesh size and expand_bounds will be ignored.  An error
-            will trigger if the internal CSX structures require a
-            larger mesh than the one specified here.
+        :param simulation_bounds: If set this will enforce a strict
+            total mesh size and expand_bounds will be ignored.  An
+            error will trigger if the internal CSX structures require
+            a larger mesh than the one specified here.
         """
         self.csx = csx
         self.lmin = lmin
@@ -63,7 +65,7 @@ class Mesh:
         # extra mesh line
         self.min_lines = min_lines - 1
         self.expand_bounds = expand_bounds
-        self.strict_bounds = strict_bounds
+        self.simulation_bounds = simulation_bounds
         # Sort primitives by decreasing priority.
         self.prims = self.csx.GetAllPrimitives()
         # Keep track of mesh regions already applied. This is an array
@@ -88,7 +90,6 @@ class Mesh:
         self.smallest_res = self.mres
         # The generated mesh.
         self.mesh = self.csx.GetGrid()
-        self.mesh.SetDeltaUnit(unit)
         # Set the lines first and draw them last since the API doesn't
         # appear to expose a way to remove individual lines.
         self.mesh_lines = [[], [], []]
@@ -139,12 +140,12 @@ class Mesh:
                     )
 
         # add simulation box mesh
-        if self.strict_bounds is not None:
-            self._check_strict_bounds_valid()
+        if self.simulation_bounds is not None:
+            self._check_simulation_bounds_valid()
             for i in range(3):
                 self._gen_mesh_in_bounds(
-                    self.strict_bounds[2 * i],
-                    self.strict_bounds[2 * i + 1],
+                    self.simulation_bounds[2 * i],
+                    self.simulation_bounds[2 * i + 1],
                     self.sres,
                     i,
                     metal=False,
@@ -203,7 +204,7 @@ class Mesh:
             else:
                 return (bisect_pos, upper)
 
-    def _check_strict_bounds_valid(self) -> None:
+    def _check_simulation_bounds_valid(self) -> None:
         """
         Ensure the strict bounds are at least as large as the mesh
         bounds formed by other structures.
@@ -214,7 +215,7 @@ class Mesh:
                 continue
             elif 0 >= len(self.ranges_meshed[idx]):
                 continue
-            if self.strict_bounds[dim] > self.ranges_meshed[idx][0]:
+            if self.simulation_bounds[dim] > self.ranges_meshed[idx][0]:
                 raise ValueError("invalid strict bounds chosen.")
         for dim in [1, 3, 5]:
             idx = int(dim / 2)
@@ -222,7 +223,7 @@ class Mesh:
                 continue
             elif 0 >= len(self.ranges_meshed[idx]):
                 continue
-            if self.strict_bounds[dim] < self.ranges_meshed[idx][-1]:
+            if self.simulation_bounds[dim] < self.ranges_meshed[idx][-1]:
                 raise ValueError("invalid strict bounds chosen.")
 
     # TODO should ensure that inserted mesh lines are not at metal boundaries
@@ -454,8 +455,8 @@ class Mesh:
             left_spacing = pos - self.mesh_lines[dim][i - 1]
             right_spacing = self.mesh_lines[dim][i + 1] - pos
             if (
-                left_spacing > (self.smooth * right_spacing)
-                and left_spacing - (self.smooth * right_spacing)
+                left_spacing > (self.smooth[dim] * right_spacing)
+                and left_spacing - (self.smooth[dim] * right_spacing)
                 > self.smallest_res / 10
             ):
                 ratio = left_spacing / right_spacing
@@ -464,7 +465,7 @@ class Mesh:
                     # about, this ensures we'll only move the mesh
                     # line when that will satisfy smoothness
                     outer_spacing = right_spacing + (
-                        1 / (self.smooth * (self.smooth + 1))
+                        1 / (self.smooth[dim] * (self.smooth[dim] + 1))
                     )
                 else:
                     outer_spacing = self.mesh_lines[dim][i + 2] - (
@@ -494,13 +495,15 @@ class Mesh:
                 # a = cs^2 + cs - b
                 if (
                     left_spacing
-                    <= outer_spacing * self.smooth * (self.smooth + 1)
+                    <= outer_spacing
+                    * self.smooth[dim]
+                    * (self.smooth[dim] + 1)
                     - right_spacing
                 ):
                     # adjustment to make left_spacing = smooth * right_spacing
-                    adj = (left_spacing - (self.smooth * right_spacing)) / (
-                        self.smooth + 1
-                    )
+                    adj = (
+                        left_spacing - (self.smooth[dim] * right_spacing)
+                    ) / (self.smooth[dim] + 1)
                     # TODO need to ensure new mesh line doesn't fall
                     # on metal boundary or violate thirds.
                     if pos not in self.const_meshes[dim]:
@@ -512,23 +515,23 @@ class Mesh:
                         )
                 # mesh separation is too small to add smooth *
                 # spacing, so instead add it halfway
-                elif ratio <= self.smooth * (self.smooth + 1):
+                elif ratio <= self.smooth[dim] * (self.smooth[dim] + 1):
                     insort_left(self.mesh_lines[dim], pos - (left_spacing / 2))
                 else:
                     insort_left(
                         self.mesh_lines[dim],
-                        pos - (self.smooth * right_spacing),
+                        pos - (self.smooth[dim] * right_spacing),
                     )
                 self._smooth_mesh_lines(dim)
             elif (
-                right_spacing > self.smooth * left_spacing
-                and right_spacing - (self.smooth * left_spacing)
+                right_spacing > self.smooth[dim] * left_spacing
+                and right_spacing - (self.smooth[dim] * left_spacing)
                 > self.smallest_res / 10
             ):
                 ratio = right_spacing / left_spacing
                 if i == 1:
                     outer_spacing = left_spacing + (
-                        1 / (self.smooth * (self.smooth + 1))
+                        1 / (self.smooth[dim] * (self.smooth[dim] + 1))
                     )
                 else:
                     outer_spacing = (
@@ -536,12 +539,14 @@ class Mesh:
                     )
                 if (
                     right_spacing
-                    <= outer_spacing * self.smooth * (self.smooth + 1)
+                    <= outer_spacing
+                    * self.smooth[dim]
+                    * (self.smooth[dim] + 1)
                     - left_spacing
                 ):
-                    adj = (right_spacing - (self.smooth * left_spacing)) / (
-                        self.smooth + 1
-                    )
+                    adj = (
+                        right_spacing - (self.smooth[dim] * left_spacing)
+                    ) / (self.smooth[dim] + 1)
                     # TODO need to ensure new mesh line doesn't fall
                     # on metal boundary or violate thirds.
                     if pos not in self.const_meshes[dim]:
@@ -551,14 +556,14 @@ class Mesh:
                         insort_left(
                             self.mesh_lines[dim], pos + (right_spacing / 2)
                         )
-                elif ratio <= self.smooth * (self.smooth + 1):
+                elif ratio <= self.smooth[dim] * (self.smooth[dim] + 1):
                     insort_left(
                         self.mesh_lines[dim], pos + (right_spacing / 2)
                     )
                 else:
                     insort_left(
                         self.mesh_lines[dim],
-                        pos + (self.smooth * left_spacing),
+                        pos + (self.smooth[dim] * left_spacing),
                     )
                 self._smooth_mesh_lines(dim)
 

@@ -40,8 +40,9 @@ class Network:
     def generate_mesh(
         self,
         lambda_min: float,
-        expand_bounds: List[float],
-        strict_bounds: List[float] = None,
+        smooth: List[float] = [1.5, 1.5, 1.5],
+        expand_bounds: List[float] = [0, 0, 0, 0, 0, 0],
+        simulation_bounds: List[float] = None,
     ) -> None:
         """
         Generate the mesh for the network.  This should be called
@@ -53,11 +54,10 @@ class Network:
                 lmin=lambda_min,
                 mres=1 / 20,
                 sres=1 / 10,
-                smooth=1.4,
-                unit=1,
+                smooth=smooth,
                 min_lines=9,
                 expand_bounds=expand_bounds,
-                strict_bounds=strict_bounds,
+                simulation_bounds=simulation_bounds,
             )
             self.mesh.generate_mesh()
 
