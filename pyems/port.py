@@ -89,6 +89,16 @@ class Port(ABC):
         self.z0 = None
         self.beta = None
 
+    def snap_to_mesh(self, mesh: Mesh) -> None:
+        """
+        Position the probes and feed so that they're located correctly
+        in relation to the mesh.  You must call this in order to get
+        correct simulation behavior.
+        """
+        [vprobe.snap_to_mesh(mesh) for vprobe in self.vprobes]
+        [iprobe.snap_to_mesh(mesh) for iprobe in self.iprobes]
+        [feed.snap_to_mesh(mesh) for feed in self.feeds]
+
     def incident_voltage(self) -> np.array:
         """
         Get the incident voltage.  This can be used to calculate
@@ -116,6 +126,19 @@ class Port(ABC):
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
         return np.concatenate(([self.freq], [np.absolute(self.v_ref)])).T
+
+    def impedance(self) -> np.array:
+        """
+        Get the characteristic impedance.
+
+        :returns: A 2D numpy array where the first column contains
+                  frequency values and the second contains the
+                  corresponding port characteristic impedance values.
+                  It is sorted by ascending frequency.
+        """
+        if not self._data_readp():
+            raise RuntimeError("Must call calc() before retreiving values.")
+        return np.concatenate(([self.freq], [np.absolute(self.z0)])).T
 
     # def incident_power(self) -> np.array:
     #     """
@@ -154,7 +177,7 @@ class Port(ABC):
         :param v: Total voltage.
         :param i: Total current.
         """
-        return (v + (self.z0 * i)) / 2
+        self.v_inc = (v + (self.z0 * i)) / 2
 
     def _calc_v_ref(self, v, i) -> None:
         """
@@ -165,7 +188,7 @@ class Port(ABC):
         :param v: Total voltage.
         :param i: Total current.
         """
-        return (v - (self.z0 * i)) / 2
+        self.v_ref = (v - (self.z0 * i)) / 2
 
     def _data_readp(self) -> bool:
         """
@@ -287,16 +310,6 @@ class PlanarPort(Port):
         self._set_feed()
         self._set_probes()
 
-    def snap_to_mesh(self, mesh: Mesh) -> None:
-        """
-        Position the probes and feed so that they're located correctly
-        in relation to the mesh.  You must call this in order to get
-        correct simulation behavior.
-        """
-        [vprobe.snap_to_mesh(mesh) for vprobe in self.vprobes]
-        [iprobe.snap_to_mesh(mesh) for iprobe in self.iprobes]
-        [feed.snap_to_mesh(mesh) for feed in self.feeds]
-
     def calc(self, sim_dir, freq) -> None:
         """
         Calculate the characteristic impedance, propagation constant,
@@ -330,19 +343,6 @@ class PlanarPort(Port):
         self._calc_v_ref(v, i)
         # self._calc_power_inc(k, v, i)
         # self._calc_power_ref(k, v, i)
-
-    def impedance(self) -> np.array:
-        """
-        Get the characteristic impedance.
-
-        :returns: A 2D numpy array where the first column contains
-                  frequency values and the second contains the
-                  corresponding port characteristic impedance values.
-                  It is sorted by ascending frequency.
-        """
-        if not self._data_readp():
-            raise RuntimeError("Must call calc() before retreiving values.")
-        return np.concatenate(([self.freq], [np.absolute(self.z0)])).T
 
     def _calc_beta(self, v, i, dv, di) -> None:
         """

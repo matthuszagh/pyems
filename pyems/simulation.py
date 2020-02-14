@@ -60,10 +60,13 @@ class Simulation:
         """
         return self.field_dumps
 
-    def finalize_structure(self, expand_bounds: List[float]) -> None:
+    def finalize_structure(
+        self, expand_bounds: List[float], strict_bounds: List[float] = None
+    ) -> None:
         self.network.generate_mesh(
             lambda_min=wavelength(self.center_freq + self.half_bandwidth),
             expand_bounds=expand_bounds,
+            strict_bounds=strict_bounds,
         )
 
     def simulate(self, num_freq_bins: int = 501) -> None:

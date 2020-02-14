@@ -1,3 +1,4 @@
+from typing import List
 from bisect import bisect_left, insort_left
 import numpy as np
 from pyems.utilities import float_cmp
@@ -21,6 +22,7 @@ class Mesh:
         unit=1,
         min_lines=9,
         expand_bounds=[20, 20, 20, 20, 20, 20],
+        strict_bounds: List[List[float]] = None,
     ):
         """
         :param csx: the CSXCAD structure (return value of
@@ -47,6 +49,10 @@ class Mesh:
             that the user will only define physical structures (e.g.
             metal layers, substrate, etc.) and will use this to set
             the simulation box.
+        :param strict_bounds: If set this will enforce a strict total
+            mesh size and expand_bounds will be ignored.  An error
+            will trigger if the internal CSX structures require a
+            larger mesh than the one specified here.
         """
         self.csx = csx
         self.lmin = lmin
@@ -57,6 +63,7 @@ class Mesh:
         # extra mesh line
         self.min_lines = min_lines - 1
         self.expand_bounds = expand_bounds
+        self.strict_bounds = strict_bounds
         # Sort primitives by decreasing priority.
         self.prims = self.csx.GetAllPrimitives()
         # Keep track of mesh regions already applied. This is an array
@@ -132,16 +139,28 @@ class Mesh:
                     )
 
         # add simulation box mesh
-        for i in range(3):
-            self._gen_mesh_in_bounds(
-                self.mesh_lines[i][0]
-                - (self.sres * self.expand_bounds[2 * i]),
-                self.mesh_lines[i][-1]
-                + (self.sres * self.expand_bounds[2 * i + 1]),
-                self.sres,
-                i,
-                metal=False,
-            )
+        if self.strict_bounds is not None:
+            self._check_strict_bounds_valid()
+            for i in range(3):
+                self._gen_mesh_in_bounds(
+                    self.strict_bounds[2 * i],
+                    self.strict_bounds[2 * i + 1],
+                    self.sres,
+                    i,
+                    metal=False,
+                )
+        else:
+            for i in range(3):
+                self._gen_mesh_in_bounds(
+                    self.mesh_lines[i][0]
+                    - (self.sres * self.expand_bounds[2 * i]),
+                    self.mesh_lines[i][-1]
+                    + (self.sres * self.expand_bounds[2 * i + 1]),
+                    self.sres,
+                    i,
+                    metal=False,
+                )
+
         # remove unintended, tightly spaced meshes
         for dim in range(3):
             self._remove_tight_mesh_lines(dim)
@@ -183,6 +202,28 @@ class Mesh:
                 return (bisect_pos - 1, lower)
             else:
                 return (bisect_pos, upper)
+
+    def _check_strict_bounds_valid(self) -> None:
+        """
+        Ensure the strict bounds are at least as large as the mesh
+        bounds formed by other structures.
+        """
+        for dim in [0, 2, 4]:
+            idx = int(dim / 2)
+            if idx >= len(self.ranges_meshed):
+                continue
+            elif 0 >= len(self.ranges_meshed[idx]):
+                continue
+            if self.strict_bounds[dim] > self.ranges_meshed[idx][0]:
+                raise ValueError("invalid strict bounds chosen.")
+        for dim in [1, 3, 5]:
+            idx = int(dim / 2)
+            if idx >= len(self.ranges_meshed):
+                continue
+            elif 0 >= len(self.ranges_meshed[idx]):
+                continue
+            if self.strict_bounds[dim] < self.ranges_meshed[idx][-1]:
+                raise ValueError("invalid strict bounds chosen.")
 
     # TODO should ensure that inserted mesh lines are not at metal boundaries
     def _enforce_thirds(self, dim):

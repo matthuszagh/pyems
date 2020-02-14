@@ -370,8 +370,9 @@ class RectWGSimulation:
         s11 = sim.get_network().s_param(1, 1)
         s12 = sim.get_network().s_param(1, 2)
         pretty_print(
-            data=[z0[:, 0] / 1e9, z0[:, 1], s11[:, 1], s12[:, 1]],
+            data=np.array([z0[:, 0] / 1e9, z0[:, 1], s11[:, 1], s12[:, 1]]).T,
             col_names=["freq", "z0", "s11", "s12"],
+            prec=[4, 4, 4, 4],
         )
         if plot:
             plt.figure()
@@ -385,17 +386,18 @@ class RectWGSimulation:
     ):
         """
         """
-        fdtd = openEMS(EndCriteria=1e-5)
+        fdtd = openEMS(EndCriteria=1e-5, MaxTime=1e-7)
         csx = ContinuousStructure()
 
-        wg_len = 100e-3
+        wg_len = 1000e-3
+        port_len = wg_len / 5
         port1_box = [
             [0, -wg["a"] / 2, -wg["b"] / 2],
-            [wg_len / 5, wg["a"] / 2, wg["b"] / 2],
+            [port_len, wg["a"] / 2, wg["b"] / 2],
         ]
         port2_box = [
             [wg_len, wg["a"] / 2, wg["b"] / 2],
-            [wg_len - (wg_len / 5), -wg["a"] / 2, -wg["b"] / 2],
+            [wg_len - port_len, -wg["a"] / 2, -wg["b"] / 2],
         ]
         port1 = RectWGPort(
             csx=csx,
@@ -418,8 +420,8 @@ class RectWGSimulation:
             efield = FieldDump(
                 csx=csx,
                 box=[
-                    [-wg_len / 2, -wg["a"] / 2, -wg["b"] / 2],
-                    [wg_len / 2, wg["a"] / 2, wg["b"] / 2],
+                    [0, -wg["a"] / 2, -wg["b"] / 2],
+                    [wg_len, wg["a"] / 2, wg["b"] / 2],
                 ],
             )
             efields = [efield]
@@ -433,5 +435,15 @@ class RectWGSimulation:
             network=network,
             field_dumps=efields,
         )
-        sim.finalize_structure(expand_bounds=[0, 0, 0, 0, 0, 0])
+        sim.finalize_structure(
+            expand_bounds=[0, 0, 0, 0, 0, 0],
+            strict_bounds=[
+                -port_len,
+                wg_len + port_len,
+                -wg["a"] / 2,
+                wg["a"] / 2,
+                -wg["b"] / 2,
+                wg["b"] / 2,
+            ],
+        )
         return sim

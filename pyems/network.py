@@ -38,7 +38,10 @@ class Network:
         # atexit.register(self._cleanup_files)
 
     def generate_mesh(
-        self, lambda_min: float, expand_bounds: List[float]
+        self,
+        lambda_min: float,
+        expand_bounds: List[float],
+        strict_bounds: List[float] = None,
     ) -> None:
         """
         Generate the mesh for the network.  This should be called
@@ -54,6 +57,7 @@ class Network:
                 unit=1,
                 min_lines=9,
                 expand_bounds=expand_bounds,
+                strict_bounds=strict_bounds,
             )
             self.mesh.generate_mesh()
 
@@ -78,9 +82,9 @@ class Network:
 
         i -= 1
         j -= 1
-        s = (
-            self.ports[i].reflected_voltage()
-            / self.ports[j].incident_voltage()
+        s = 20 * np.log10(
+            self.ports[i].reflected_voltage()[:, 1]
+            / self.ports[j].incident_voltage()[:, 1]
         )
         return np.concatenate(([self.freq], [s])).T
 

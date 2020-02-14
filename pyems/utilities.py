@@ -12,8 +12,9 @@ def pretty_print(
     data: np.array, col_names: List[str], prec: List[int], out_file=sys.stdout,
 ) -> None:
     """
-    Print table (2D numpy array) in appropriately-widthed columns.
+    Print table (2D numpy array) in appropriately-sized columns.
     """
+    data = np.array(data)
     col_widths = [
         int(_val_digits(np.amax(np.absolute(data[:, col]))) + prec[col] + 2)
         for col in range(len(col_names))
@@ -37,10 +38,8 @@ def _val_digits(val: float) -> int:
     Compute the number of decimal digits needed to display the
     integral portion of a value.
     """
-    extra_digits = 0
-    if val < 0:
-        val *= -1
-        extra_digits = 1
+    # assume negative for simplicity
+    extra_digits = 1
 
     if val < 10:
         return extra_digits + 1
