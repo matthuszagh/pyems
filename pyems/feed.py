@@ -16,8 +16,11 @@ class Feed:
         csx: ContinuousStructure,
         box: List[List[float]],
         excite_direction: List[float],
+        excite_type: int = 0,
         resistance: float = None,
         transform_args=None,
+        weight_func=None,
+        delay: int = 0,
     ):
         """
         :param csx: CSX object.
@@ -27,16 +30,23 @@ class Feed:
             propagates.  Provide a list of 3 values corresponding to
             x, y, and z.  For instance, [0, 0, 1] would propagate in
             the +z direction.
+        :param excite_type: Excitation type. See `SetExcitation`.
         :param resistance: Feed resistance.  If left as None, which is
             the default, the feed will have infinite impedance.  In
             this case make sure to terminate the structure in PMLs.
         :param transform_args: Any transformations to apply to feed.
+        :param weight_func: Excitation weighting function.  See
+            `SetWeightFunction`.
+        :param delay: Excitation delay in seconds.
         """
         self.csx = csx
         self.box = box
         self.resistance = resistance
         self.excite_direction = excite_direction
+        self.excite_type = excite_type
         self.transform_args = transform_args
+        self.weight_func = weight_func
+        self.delay = delay
         self.excitation_box = None
         self.res_box = None
 
@@ -48,13 +58,19 @@ class Feed:
         """
         excitation = self.csx.AddExcitation(
             name="excite_" + str(self._get_inc_ctr()),
-            exc_type=0,
+            exc_type=self.excite_type,
             exc_val=self.excite_direction,
+            delay=self.delay,
         )
+        if self.weight_func:
+            excitation.SetWeightFunction(self.weight_func)
+
         self.excitation_box = excitation.AddBox(
             start=self.box[0], stop=self.box[1], priority=max_priority()
         )
-        self.excitation_box.AddTransform(*self.transform_args)
+
+        if self.transform_args is not None:
+            self.excitation_box.AddTransform(*self.transform_args)
 
         if self.resistance:
             res = self.csx.AddLumpedElement(
@@ -101,15 +117,8 @@ class Feed:
         AddLumpedElement requires a direction in the form of 0, 1, or
         2. Get this value from the excitation direction.
         """
+        # TODO doesn't work when excite_direction has multiple directions.
         return abs(self.excite_direction[1] + (2 * self.excite_direction[2]))
-
-    def _get_excite_dir(self) -> List[int]:
-        """
-        """
-        if self.box[0][2] < self.box[1][2]:
-            return [0, 0, 1]
-        else:
-            return [0, 0, -1]
 
     @classmethod
     def _get_ctr(cls):

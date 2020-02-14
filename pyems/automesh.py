@@ -1,22 +1,6 @@
 from bisect import bisect_left, insort_left
 import numpy as np
-
-
-def float_cmp(a: float, b: float, tol: float) -> bool:
-    """
-    Return true if floats are equal to within a specified tolerance of
-    each other.  This avoids erroneous errors due to finite numeric
-    precision.
-
-    :param a: first float.
-    :param b: second float.
-    :param tol: max acceptable value difference.
-
-    :returns: True if within the specified tolerance, false otherwise.
-    """
-    if abs(a - b) <= tol:
-        return True
-    return False
+from pyems.utilities import float_cmp
 
 
 class Mesh:
@@ -34,8 +18,8 @@ class Mesh:
         mres=1 / 20,
         sres=1 / 10,
         smooth=1.5,
-        unit=1e-3,
-        min_lines=10,
+        unit=1,
+        min_lines=9,
         expand_bounds=[20, 20, 20, 20, 20, 20],
     ):
         """
@@ -49,10 +33,20 @@ class Mesh:
             of lmin.
         :param smooth: the factor by which adjacent cells are allowed
             to differ in size.
-        :param unit: the mesh size unit, which defaults to mm.
+        :param unit: the mesh size unit, which defaults to m.
         :param min_lines: the minimum number of mesh lines for a
             primitive's dimensional length, unless the length of that
             primitive's dimension is precisely 0.
+        :param expand bounds: list of 6 elements corresponding to
+            [xmin, xmax, ymin, ymax, zmin, zmax] each element gives
+            the number of cells to add to the mesh at that boundary.
+            The cell size is determined by sres and the actual number
+            of cells added may be more (or possibly) less than what is
+            specified here due to the thirds rule and smoothing.  This
+            essentially defines the simulation box.  It's anticipated
+            that the user will only define physical structures (e.g.
+            metal layers, substrate, etc.) and will use this to set
+            the simulation box.
         """
         self.csx = csx
         self.lmin = lmin
@@ -62,16 +56,6 @@ class Mesh:
         # mesh lines are added at both boundaries, which gives us an
         # extra mesh line
         self.min_lines = min_lines - 1
-        # list of 6 elements corresponding to
-        # [xmin, xmax, ymin, ymax, zmin, zmax]
-        # each element gives the number of cells to add to the mesh
-        # at that boundary. The cell size is determined by sres and
-        # the actual number of cells added may be more (or possibly)
-        # less than what is specified here due to the thirds rule
-        # and smoothing. This essentially defines the simulation box.
-        # It's anticipated that the user will only define physical
-        # structures (e.g. metal layers, substrate, etc.) and will
-        # use this to set the simulation box.
         self.expand_bounds = expand_bounds
         # Sort primitives by decreasing priority.
         self.prims = self.csx.GetAllPrimitives()
@@ -374,11 +358,15 @@ class Mesh:
         return outin_ranges
 
     def _clear_mesh_in_bounds(self, lower, upper, dim):
+        """
+        """
         for elt in self.mesh_lines[dim]:
             if elt >= lower and elt <= upper:
                 self.mesh_lines[dim].remove(elt)
 
     def _range_union(self, ranges, start_idx=0):
+        """
+        """
         ranges = sorted(ranges)
         if len(ranges[start_idx:]) <= 1:
             return ranges

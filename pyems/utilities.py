@@ -2,7 +2,12 @@ import sys
 from typing import List
 import numpy as np
 
+C0 = 299792458
 
+
+# TODO should set max precision instead of precision list. Precision
+# should be computed automatically based on the last digit that
+# differs between each value.
 def pretty_print(
     data: np.array, col_names: List[str], prec: List[int], out_file=sys.stdout,
 ) -> None:
@@ -35,12 +40,29 @@ def _val_digits(val: float) -> int:
     extra_digits = 0
     if val < 0:
         val *= -1
-        extra_digits += 1
+        extra_digits = 1
 
-    if val < 1:
+    if val < 10:
         return extra_digits + 1
 
     return int(np.log10(val)) + extra_digits
+
+
+def float_cmp(a: float, b: float, tol: float) -> bool:
+    """
+    Return true if floats are equal to within a specified tolerance of
+    each other.  This avoids erroneous errors due to finite numeric
+    precision.
+
+    :param a: first float.
+    :param b: second float.
+    :param tol: max acceptable value difference.
+
+    :returns: True if within the specified tolerance, false otherwise.
+    """
+    if abs(a - b) <= tol:
+        return True
+    return False
 
 
 def sort_table_by_col(arr: np.array, col: int = 0):
@@ -118,3 +140,19 @@ def max_priority() -> int:
     :returns: highest priority.
     """
     return 999
+
+
+def wavelength(freq: np.array) -> np.array:
+    """
+    Calculate the wavelength for a given frequency of light.  This
+    presently assumes that the light is travelling through a vacuum.
+    """
+    return C0 / freq
+
+
+def wavenumber(freq: np.array) -> np.array:
+    """
+    Calculate the wavenumber for a given frequency of light.  Assumes
+    light is travelling through a vacuum.
+    """
+    return 2 * np.pi * freq / C0

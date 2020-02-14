@@ -6,6 +6,7 @@ from openEMS import openEMS
 from CSXCAD.CSXCAD import ContinuousStructure
 from pyems.network import Network
 from pyems.field_dump import FieldDump
+from pyems.utilities import wavelength
 
 
 class Simulation:
@@ -61,7 +62,7 @@ class Simulation:
 
     def finalize_structure(self, expand_bounds: List[float]) -> None:
         self.network.generate_mesh(
-            lambda_min=freq_wavelength(self.center_freq + self.half_bandwidth),
+            lambda_min=wavelength(self.center_freq + self.half_bandwidth),
             expand_bounds=expand_bounds,
         )
 
@@ -113,14 +114,6 @@ class Simulation:
             first field dump.
         """
         self.field_dumps[index].save(dir_path=dir_path)
-
-
-def freq_wavelength(freq: float) -> float:
-    """
-    Calculate the wavelength for a given frequency of light.  This
-    presently assumes that the light is travelling through a vacuum.
-    """
-    return 299792458 / freq
 
 
 def sweep(sims: List[Simulation], func, processes: int = 11):

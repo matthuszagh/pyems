@@ -18,6 +18,8 @@ class Probe:
         p_type: int = 0,
         norm_dir: int = None,
         transform_args: List[str] = None,
+        weight: float = 1,
+        mode_function: List = None,
     ):
         """
         """
@@ -25,8 +27,10 @@ class Probe:
         self.box = box
         self.p_type = p_type
         self.norm_dir = norm_dir
-        self.name = self._probe_name_prefix() + "t_" + str(self._get_ctr())
         self.transform_args = transform_args
+        self.weight = weight
+        self.mode_function = mode_function
+        self.name = self._probe_name_prefix() + "t_" + str(self._get_ctr())
         self._inc_ctr()
         self.freq = None
         self.time = None
@@ -37,14 +41,16 @@ class Probe:
         self._set_probe()
 
     def _set_probe(self) -> None:
+        """
+        """
+        self.csx_probe = self.csx.AddProbe(name=self.name, p_type=self.p_type)
+        self.csx_probe.SetWeighting(self.weight)
+
         if self.norm_dir is not None:
-            self.csx_probe = self.csx.AddProbe(
-                name=self.name, p_type=self.p_type, norm_dir=self.norm_dir
-            )
-        else:
-            self.csx_probe = self.csx.AddProbe(
-                name=self.name, p_type=self.p_type
-            )
+            self.csx_probe.SetNormalDir(self.norm_dir)
+
+        if self.mode_function is not None:
+            self.csx_probe.SetModeFunction(self.mode_function)
 
         self.csx_box = self.csx_probe.AddBox(
             start=self.box[0], stop=self.box[1]

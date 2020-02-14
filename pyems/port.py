@@ -45,62 +45,156 @@ from CSXCAD.CSXCAD import ContinuousStructure
 from CSXCAD.CSTransform import CSTransform
 from pyems.automesh import Mesh
 from pyems.probe import Probe
-from pyems.utilities import max_priority
+from pyems.utilities import max_priority, wavenumber
 from pyems.feed import Feed
+
+
+C0 = 299792458  # m/s
+MUE0 = 4e-7 * np.pi  # N/A^2
+EPS0 = 1 / (MUE0 * C0 ** 2)  # F/m
+# free space wave impedance
+Z0 = np.sqrt(MUE0 / EPS0)  # Ohm
 
 
 class Port(ABC):
     """
+    Port base class.
     """
 
-    def incident_power(self) -> np.array:
+    # Used to provide unique filenames, since openems requires that we
+    # specify these.
+    unique_ctr = 0
+
+    def __init__(
+        self, csx: ContinuousStructure, excite: bool = False,
+    ):
         """
-        Get the incident power.  This is generally useful for
-        calculating S-parameters.
+        :param csx: The CSXCAD ContinuousStructure to which this port
+            is added.
+        :param excite: Set to True if this port should generate an
+            excitation.  The actual excitation type is set by the
+            `Simulation` object that contains this port.
+        """
+        self.csx = csx
+        self.excite = excite
+        self.unit = 1
+        self.feeds = []
+        self.vprobes = []
+        self.iprobes = []
+        self.freq = None
+        self.v_inc = None
+        self.v_ref = None
+        self.p_inc = None
+        self.p_ref = None
+        self.z0 = None
+        self.beta = None
+
+    def incident_voltage(self) -> np.array:
+        """
+        Get the incident voltage.  This can be used to calculate
+        S-parameters.
 
         :returns: A 2D numpy array where the first column contains
                   frequency values and the second contains the
-                  corresponding port incident power values.  It is
+                  corresponding port incident voltage values.  It is
                   sorted by ascending frequency.
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return np.concatenate(
-            ([self.get_freq()], [np.absolute(self._get_p_inc())])
-        ).T
+        return np.concatenate(([self.freq], [np.absolute(self.v_inc)])).T
 
-    def reflected_power(self) -> np.array:
+    def reflected_voltage(self) -> np.array:
         """
-        Get the reflected power.  This is generally useful for
-        calculating S-parameters.
+        Get the reflected voltage.  This can be used to calculate
+        S-parameters.
 
         :returns: A 2D numpy array where the first column contains
                   frequency values and the second contains the
-                  corresponding port reflected power values.  It is
+                  corresponding port reflected voltage values.  It is
                   sorted by ascending frequency.
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return np.array(
-            ([self.get_freq()], [np.absolute(self._get_p_ref())])
-        ).T
+        return np.concatenate(([self.freq], [np.absolute(self.v_ref)])).T
+
+    # def incident_power(self) -> np.array:
+    #     """
+    #     Get the incident power.  This is generally useful for
+    #     calculating S-parameters.
+
+    #     :returns: A 2D numpy array where the first column contains
+    #               frequency values and the second contains the
+    #               corresponding port incident power values.  It is
+    #               sorted by ascending frequency.
+    #     """
+    #     if not self._data_readp():
+    #         raise RuntimeError("Must call calc() before retreiving values.")
+    #     return np.concatenate(([self.freq], [np.absolute(self.p_inc)])).T
+
+    # def reflected_power(self) -> np.array:
+    #     """
+    #     Get the reflected power.  This is generally useful for
+    #     calculating S-parameters.
+
+    #     :returns: A 2D numpy array where the first column contains
+    #               frequency values and the second contains the
+    #               corresponding port reflected power values.  It is
+    #               sorted by ascending frequency.
+    #     """
+    #     if not self._data_readp():
+    #         raise RuntimeError("Must call calc() before retreiving values.")
+    #     return np.array(([self.freq], [np.absolute(self.p_ref)])).T
+
+    def _calc_v_inc(self, v, i) -> None:
+        """
+        Calculate the incident voltage.
+
+        See Pozar 4e section 4.3 (p.185) for derivation.
+
+        :param v: Total voltage.
+        :param i: Total current.
+        """
+        return (v + (self.z0 * i)) / 2
+
+    def _calc_v_ref(self, v, i) -> None:
+        """
+        Calculate the reflected voltage.
+
+        See Pozar 4e section 4.3 (p.185) for derivation.
+
+        :param v: Total voltage.
+        :param i: Total current.
+        """
+        return (v - (self.z0 * i)) / 2
 
     def _data_readp(self) -> bool:
         """
+        Return True if data has been read from simulation result.
         """
-        return self.get_freq() is not None
+        return self.freq is not None
 
-    @abstractmethod
-    def get_freq(self) -> np.array:
-        pass
+    @classmethod
+    def _get_ctr(cls):
+        """
+        Retrieve unique counter.
+        """
+        return cls.unique_ctr
 
-    @abstractmethod
-    def _get_p_inc(self) -> np.array:
-        pass
+    @classmethod
+    def _inc_ctr(cls):
+        """
+        Increment unique counter.
+        """
+        cls.unique_ctr += 1
 
-    @abstractmethod
-    def _get_p_ref(self) -> np.array:
-        pass
+    @classmethod
+    def _get_inc_ctr(cls):
+        """
+        Retrieve and increment unique counter.
+        """
+        ctr = cls._get_ctr()
+        cls._inc_ctr()
+        return ctr
 
 
 class PlanarPort(Port):
@@ -110,8 +204,6 @@ class PlanarPort(Port):
     of the number, shape and position of their feeding and measurement
     probes.
     """
-
-    unique_ctr = 0
 
     def __init__(
         self,
@@ -146,8 +238,6 @@ class PlanarPort(Port):
         Excitation feeds are placed relative to `start_corner`'s x
         position.  See `feed_shift` for the relative positioning.
 
-        :param csx: The CSXCAD ContinuousStructure to which this port
-            is added.
         :param bounding_box: A 2D list of 2 elements, where each
             element is an inner list of 3 elements.  The 1st list is
             the [x,y,z] components of the starting corner and the 2nd
@@ -161,9 +251,6 @@ class PlanarPort(Port):
         :param thickness: Metal trace thickness (in mm).
         :param conductivity: Metal conductivity (in S/m).  The default
             uses the conductivity of copper.
-        :param excite: Set to True if this port should generate an
-            excitation.  The actual excitation type is set by the
-            `Simulation` object that contains this port.
         :param feed_resistance: The feeding resistance value.  The
             default value of None creates an infinite resistance.  If
             you use the default value ensure that the port is
@@ -185,12 +272,10 @@ class PlanarPort(Port):
         :param rotate: The amount to rotate the port in degrees.  This
             uses `AddTransform('RotateAxis', 'z', rotate)`.
         """
-        self.unit = 1
-        self.csx = csx
+        super().__init__(csx, excite)
         self.box = np.multiply(self.unit, bounding_box)
         self.thickness = self.unit * thickness
         self.conductivity = conductivity
-        self.excite = excite
         self.feed_resistance = feed_resistance
         self.feed_shift = feed_shift
         self.measurement_shift = measurement_shift
@@ -198,19 +283,9 @@ class PlanarPort(Port):
         self.rotate_transform = CSTransform()
         self.rotate_transform.AddTransform(*self.transform_args)
 
-        # set later
-        self.vprobes = None
-        self.iprobes = None
-        self.freq = None
-        self.z0 = None
-        self.beta = None
-        self.P_inc = None
-        self.P_ref = None
-        self.feeds = []
-
         self._set_trace()
         self._set_feed()
-        self._set_measurement_probes()
+        self._set_probes()
 
     def snap_to_mesh(self, mesh: Mesh) -> None:
         """
@@ -250,11 +325,13 @@ class PlanarPort(Port):
 
         self._calc_beta(v, i, dv, di)
         self._calc_z0(v, i, dv, di)
-        k = 1 / np.sqrt(np.absolute(self.z0))
-        self._calc_power_inc(k, v, i)
-        self._calc_power_ref(k, v, i)
+        # k = 1 / np.sqrt(np.absolute(self.z0))
+        self._calc_v_inc(v, i)
+        self._calc_v_ref(v, i)
+        # self._calc_power_inc(k, v, i)
+        # self._calc_power_ref(k, v, i)
 
-    def characteristic_impedance(self) -> np.array:
+    def impedance(self) -> np.array:
         """
         Get the characteristic impedance.
 
@@ -265,22 +342,7 @@ class PlanarPort(Port):
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return np.concatenate(([self.get_freq()], [np.absolute(self.z0)])).T
-
-    def get_freq(self) -> np.array:
-        """
-        """
-        return self.freq
-
-    def _get_p_inc(self) -> np.array:
-        """
-        """
-        return self.P_inc
-
-    def _get_p_ref(self) -> np.array:
-        """
-        """
-        return self.P_ref
+        return np.concatenate(([self.freq], [np.absolute(self.z0)])).T
 
     def _calc_beta(self, v, i, dv, di) -> None:
         """
@@ -311,33 +373,33 @@ class PlanarPort(Port):
         """
         self.z0 = np.sqrt(v * dv / (i * di))
 
-    def _calc_power_inc(self, k, v, i) -> None:
-        """
-        Calculate the port's incident power wave.
+    # def _calc_power_inc(self, k, v, i) -> None:
+    #     """
+    #     Calculate the port's incident power wave.
 
-        ..  math:: a_i = (1/2) k_i(V_i + Z_iI_i)
+    #     ..  math:: a_i = (1/2) k_i(V_i + Z_iI_i)
 
-        ..  math:: k_i = sqrt{|Re(Z_i)|}^{-1}
+    #     ..  math:: k_i = sqrt{|Re(Z_i)|}^{-1}
 
-        :param k: see equation
-        :param v: voltage
-        :param i: current
-        """
-        self.P_inc = (1 / 2) * k * (v + (self.z0 * i))
+    #     :param k: see equation
+    #     :param v: voltage
+    #     :param i: current
+    #     """
+    #     self.p_inc = (1 / 2) * k * (v + (self.z0 * i))
 
-    def _calc_power_ref(self, k, v, i) -> None:
-        """
-        Calculate the port's reflected power wave.
+    # def _calc_power_ref(self, k, v, i) -> None:
+    #     """
+    #     Calculate the port's reflected power wave.
 
-        ..  math:: b_i = (1/2) k_i(V_i - Z_iI_i)
+    #     ..  math:: b_i = (1/2) k_i(V_i - Z_iI_i)
 
-        ..  math:: k_i = sqrt{|Re(Z_i)|}^{-1}
+    #     ..  math:: k_i = sqrt{|Re(Z_i)|}^{-1}
 
-        :param k: see equation
-        :param v: voltage
-        :param i: current
-        """
-        self.P_inc = (1 / 2) * k * (v - (np.conjugate(self.z0) * i))
+    #     :param k: see equation
+    #     :param v: voltage
+    #     :param i: current
+    #     """
+    #     self.p_inc = (1 / 2) * k * (v - (np.conjugate(self.z0) * i))
 
     def _set_trace(self) -> None:
         """
@@ -365,9 +427,9 @@ class PlanarPort(Port):
             [self.box[1][0], self.box[1][1], self.box[1][2]],
         ]
 
-    def _set_measurement_probes(self):
+    def _set_probes(self) -> None:
         """
-        Add measurement probes.
+        Set measurement probes.
         """
         trace_box = self._get_trace_box()
         trace_ylow = trace_box[0][1]
@@ -413,26 +475,6 @@ class PlanarPort(Port):
     @abstractmethod
     def _set_feed(self) -> None:
         pass
-
-    @classmethod
-    def _get_ctr(cls):
-        """
-        """
-        return cls.unique_ctr
-
-    @classmethod
-    def _inc_ctr(cls):
-        """
-        """
-        cls.unique_ctr += 1
-
-    @classmethod
-    def _get_inc_ctr(cls):
-        """
-        """
-        ctr = cls._get_ctr()
-        cls._inc_ctr()
-        return ctr
 
 
 class MicrostripPort(PlanarPort):
@@ -496,7 +538,6 @@ class CPWPort(PlanarPort):
         """
         :param gap: Gap between adjacent ground planes and trace (in m).
         """
-        self.gap = gap
         super().__init__(
             csx,
             bounding_box,
@@ -508,6 +549,7 @@ class CPWPort(PlanarPort):
             measurement_shift,
             rotate,
         )
+        self.gap = gap
 
     def _set_feed(self) -> None:
         """
@@ -543,3 +585,258 @@ class CPWPort(PlanarPort):
             )
         ]
         return feed_boxes
+
+
+class WaveguidePort(Port):
+    """
+    Waveguide port base class.
+    """
+
+    def __init__(
+        self,
+        csx: ContinuousStructure,
+        box: List[List[float]],
+        excite_direction: int,
+        E_WG_func,
+        H_WG_func,
+        kc,
+        excite: bool = False,
+        delay: float = 0,
+        transform_args=None,
+    ):
+        """
+        :param box: 2D list where first list is x,y,z of the first
+            corner and second list is x,y,z of second corner.
+        :param excite_direction: The direction that the excitation
+            propagates.  Set to 0, 1, or 2, for x, y, or z.
+        :param excite: If True, add an excitation to the port.
+        """
+        super().__init__(csx, excite)
+        self.box = np.array(box, np.float)
+        self.excite_direction = excite_direction
+        self.E_func = E_WG_func
+        self.H_func = H_WG_func
+        self.kc = kc
+        self.delay = delay
+        self.transform_args = transform_args
+
+        self._set_feed()
+        self._set_probes()
+
+    def calc(self, sim_dir, freq):
+        """
+        Calculate the characteristic impedance, propagation constant,
+        and incident and reflected voltage.
+
+        TODO this doesn't account for reference plane shifts.  See
+        p.184 of Pozar, or original openems ports.py file for this.
+
+        :param sim_dir: Simulation directory path.
+        :param freq: Frequency bins.  Should be the same frequency
+            bins as the ones used in the excitation.
+        """
+        self.freq = np.array(freq)
+        k = wavenumber(self.freq)
+        self._calc_beta(k)
+        self._calc_z0(k)
+        [vprobe.read(sim_dir=sim_dir, freq=freq) for vprobe in self.vprobes]
+        [iprobe.read(sim_dir=sim_dir, freq=freq) for iprobe in self.iprobes]
+        v = self.vprobes[0].get_freq_data()[:, 1]
+        i = self.iprobes[0].get_freq_data()[:, 1]
+        self._calc_v_inc(v, i)
+        self._calc_v_ref(v, i)
+
+    def _calc_beta(self, k) -> None:
+        """
+        Calculate the propagation constant.
+        """
+        self.beta = np.sqrt(k ** 2 - self.kc ** 2)
+
+    def _calc_z0(self, k) -> None:
+        """
+        Calculate the characteristic impedance.
+        """
+        self.z0 = k * Z0 / self.beta
+
+    def _set_probes(self) -> None:
+        """
+        Set measurement probes.
+        """
+        m_start = np.array(self.box[0])
+        m_stop = np.array(self.box[1])
+        m_start[self.excite_direction] = m_stop[self.excite_direction]
+
+        self.vprobes = [
+            Probe(
+                csx=self.csx,
+                box=[m_start, m_stop],
+                p_type=10,
+                transform_args=self.transform_args,
+                mode_function=self.E_func,
+            )
+        ]
+
+        direction = np.sign(
+            self.box[1][self.excite_direction]
+            - self.box[0][self.excite_direction]
+        )
+        self.iprobes = [
+            Probe(
+                csx=self.csx,
+                box=[m_start, m_stop],
+                p_type=11,
+                transform_args=self.transform_args,
+                weight=direction,
+                mode_function=self.H_func,
+            )
+        ]
+
+    def _set_feed(self) -> None:
+        """
+        Set excitation feed.
+        """
+        if self.excite:
+            e_start = np.array(self.box[0])
+            e_stop = np.array(self.box[1])
+            e_stop[self.excite_direction] = e_start[self.excite_direction]
+            e_vec = np.ones(3)
+            e_vec[self.excite_direction] = 0
+            weight_func = [str(x) for x in self.E_func]
+            feed = Feed(
+                csx=self.csx,
+                box=self.box,
+                excite_direction=e_vec,
+                excite_type=0,
+                weight_func=weight_func,
+                delay=self.delay,
+            )
+            self.feeds.append(feed)
+
+
+class RectWGPort(WaveguidePort):
+    """
+    Rectangular waveguide port.
+    """
+
+    def __init__(
+        self,
+        csx: ContinuousStructure,
+        box: List[List[float]],
+        excite_direction: int,
+        a: float,
+        b: float,
+        mode_name: str = "TE10",
+        excite: bool = False,
+        delay: float = 0,
+        transform_args=None,
+    ):
+        """
+        :param a: Width of rectangular waveguide port (in m).
+        :param b: Height of rectangular waveguide port (in m).
+        :param mode_name: Waveguide propagation mode.  If you don't
+            know this you probably want the default.  Otherwise, see
+            Pozar (4e) p.110 for more information.
+        """
+        self.csx = csx
+        self.box = box
+        self.excite_direction = excite_direction
+        self.a = a
+        self.b = b
+        self.mode_name = mode_name
+        self.excite = excite
+        self.ny_P = (self.excite_direction + 1) % 3
+        self.ny_PP = (self.excite_direction + 2) % 3
+
+        self.WG_mode = mode_name
+        assert len(self.WG_mode) == 4, "Invalid mode definition"
+        if self.WG_mode.startswith("TE"):
+            self.TE = True
+            self.TM = False
+        else:
+            self.TE = False
+            self.TM = True
+        self.m = float(self.WG_mode[2])
+        self.n = float(self.WG_mode[3])
+
+        assert (
+            self.TE
+        ), "Currently only TE-modes are supported! Mode found: {}".format(
+            self.WG_mode
+        )
+
+        # TODO everything below needs to be refactored.
+        xyz = "xyz"
+        if self.box[0][self.ny_P] != 0:
+            name_P = "({}-{})".format(xyz[self.ny_P], self.box[0][self.ny_P])
+        else:
+            name_P = xyz[self.ny_P]
+        if self.box[0][self.ny_PP] != 0:
+            name_PP = "({}-{})".format(xyz[self.ny_P], self.box[0][self.ny_P])
+        else:
+            name_PP = xyz[self.ny_P]
+
+        self._calc_cutoff_wavenumber()
+
+        E_func = [0, 0, 0]
+        H_func = [0, 0, 0]
+        if self.n > 0:
+            E_func[self.ny_P] = "{}*cos({}*{})*sin({}*{})".format(
+                self.n / self.b,
+                self.m * np.pi / self.a,
+                name_P,
+                self.n * np.pi / self.b,
+                name_PP,
+            )
+        if self.m > 0:
+            E_func[self.ny_PP] = "{}*sin({}*{})*cos({}*{})".format(
+                -1 * self.m / self.a,
+                self.m * np.pi / self.a,
+                name_P,
+                self.n * np.pi / self.b,
+                name_PP,
+            )
+
+        if self.m > 0:
+            H_func[self.ny_P] = "{}*sin({}*{})*cos({}*{})".format(
+                self.m / self.a,
+                self.m * np.pi / self.a,
+                name_P,
+                self.n * np.pi / self.b,
+                name_PP,
+            )
+        if self.n > 0:
+            H_func[self.ny_PP] = "{}*cos({}*{})*sin({}*{})".format(
+                self.n / self.b,
+                self.m * np.pi / self.a,
+                name_P,
+                self.n * np.pi / self.b,
+                name_PP,
+            )
+
+        super().__init__(
+            csx=self.csx,
+            box=self.box,
+            excite_direction=self.excite_direction,
+            E_WG_func=E_func,
+            H_WG_func=H_func,
+            kc=self.kc,
+            excite=self.excite,
+            delay=delay,
+            transform_args=transform_args,
+        )
+
+    def _calc_cutoff_wavenumber(self) -> None:
+        """
+        Calculate the minimum wavenumber for wave to propagate.
+
+        See Pozar (4e) p.112 for derivation.
+        """
+        self.kc = np.sqrt(
+            ((self.m * np.pi / self.a) ** 2) + ((self.n * np.pi / self.b) ** 2)
+        )
+
+
+# See https://www.everythingrf.com/tech-resources/waveguides-sizes
+standard_waveguides = {
+    "WR159": {"a": np.multiply(1e-3, 40.386), "b": np.multiply(1e-3, 20.193)}
+}

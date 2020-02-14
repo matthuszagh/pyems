@@ -2,6 +2,7 @@ from typing import List
 import tempfile
 import atexit
 import subprocess
+import numpy as np
 from CSXCAD.CSXCAD import ContinuousStructure
 from pyems.port import Port
 from pyems.automesh import Mesh
@@ -32,6 +33,7 @@ class Network:
         self.mesh = mesh
 
         # set later
+        self.freq = None
         self.csx_fd, self.csx_file = tempfile.mkstemp()
         # atexit.register(self._cleanup_files)
 
@@ -58,6 +60,30 @@ class Network:
         [port.snap_to_mesh(mesh=self.mesh) for port in self.ports]
         self._write_csx()
 
+    def s_param(self, i: int, j: int) -> np.array:
+        """
+        Calculate the S-parameter, S_{ij}.
+
+        :param i: First subscript of S.  Must be in the range [1,
+                  num_ports]
+        :param j: Second subscript of S.  Must be in the range [1,
+                  num_ports]
+        """
+        num_ports = self._num_ports()
+        if i > num_ports or j > num_ports or i < 1 or j < 1:
+            raise ValueError(
+                "Invalid S-parameter requested. Ensure that i and j are in "
+                "the proper range for the network."
+            )
+
+        i -= 1
+        j -= 1
+        s = (
+            self.ports[i].reflected_voltage()
+            / self.ports[j].incident_voltage()
+        )
+        return np.concatenate(([self.freq], [s])).T
+
     def get_mesh(self) -> Mesh:
         """
         Get the network mesh.
@@ -68,6 +94,7 @@ class Network:
         """
         Calculate all port parameters.
         """
+        self.freq = freq
         [port.calc(sim_dir=sim_dir, freq=freq) for port in self.ports]
 
     def add_port(self, port: Port) -> None:
@@ -81,6 +108,12 @@ class Network:
         Retrieve all network ports.
         """
         return self.ports
+
+    def _num_ports(self) -> int:
+        """
+        Return the number of ports in the network.
+        """
+        return len(self.ports)
 
     def save(self, file_path: str) -> None:
         """

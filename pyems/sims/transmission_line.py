@@ -6,7 +6,7 @@ import sys
 from functools import partial
 import numpy as np
 import matplotlib.pyplot as plt
-from pyems.port import MicrostripPort, CPWPort
+from pyems.port import MicrostripPort, CPWPort, RectWGPort, standard_waveguides
 from pyems.pcb import PCB
 from pyems.network import Network
 from pyems.simulation import Simulation, sweep
@@ -22,7 +22,7 @@ def _imped_at_freq(sim: Simulation, freq: float):
     """
     sim.simulate()
     net_ports = sim.get_network().get_ports()
-    z0 = net_ports[0].characteristic_impedance()
+    z0 = net_ports[0].impedance()
     return float(table_interp_val(z0, target_col=1, sel_val=freq, sel_col=0))
 
 
@@ -49,7 +49,7 @@ class MicrostripSimulation:
         sim.simulate()
         sim.view_field()
         net_ports = sim.get_network().get_ports()
-        z0 = net_ports[0].characteristic_impedance()
+        z0 = net_ports[0].impedance()
         pretty_print(data=[z0[:, 0] / 1e9, z0[:, 1]], col_names=["freq", "z0"])
         if plot:
             plt.figure()
@@ -195,7 +195,7 @@ class GCPWSimulation:
         sim.view_field()
         sim.save_field("tmp")
         net_ports = sim.get_network().get_ports()
-        z0 = net_ports[0].characteristic_impedance()
+        z0 = net_ports[0].impedance()
         pretty_print(data=[z0[:, 0] / 1e9, z0[:, 1]], col_names=["freq", "z0"])
         if plot:
             plt.figure()
@@ -345,4 +345,93 @@ class GCPWSimulation:
         #         start=[xval, yhigh, -pcb.layer_separation()[0]],
         #         stop=[xval, yhigh, 0],
         #     )
+        return sim
+
+
+class RectWGSimulation:
+    """
+    """
+
+    def rectwg_sim(
+        self, center_freq: float, half_bandwidth: float, wg, plot=False,
+    ):
+        """
+        Find the characteristic impedance of a grounded coplanar
+        waveguide transmission line for a given width.
+        """
+        sim = self._gen_rectwg_sim(
+            wg, center_freq, half_bandwidth, view_field=True
+        )
+        sim.view_network()
+        sim.simulate()
+        sim.view_field()
+        net_ports = sim.get_network().get_ports()
+        z0 = net_ports[0].impedance()
+        s11 = sim.get_network().s_param(1, 1)
+        s12 = sim.get_network().s_param(1, 2)
+        pretty_print(
+            data=[z0[:, 0] / 1e9, z0[:, 1], s11[:, 1], s12[:, 1]],
+            col_names=["freq", "z0", "s11", "s12"],
+        )
+        if plot:
+            plt.figure()
+            plt.plot(z0[:, 0], z0[:, 1])
+            plt.plot(z0[:, 0], s11[:, 1])
+            plt.plot(z0[:, 0], s12[:, 1])
+            plt.show()
+
+    def _gen_rectwg_sim(
+        self, wg, center_freq: float, half_bandwidth: float, view_field=False,
+    ):
+        """
+        """
+        fdtd = openEMS(EndCriteria=1e-5)
+        csx = ContinuousStructure()
+
+        wg_len = 100e-3
+        port1_box = [
+            [0, -wg["a"] / 2, -wg["b"] / 2],
+            [wg_len / 5, wg["a"] / 2, wg["b"] / 2],
+        ]
+        port2_box = [
+            [wg_len, wg["a"] / 2, wg["b"] / 2],
+            [wg_len - (wg_len / 5), -wg["a"] / 2, -wg["b"] / 2],
+        ]
+        port1 = RectWGPort(
+            csx=csx,
+            box=port1_box,
+            excite_direction=0,
+            a=wg["a"],
+            b=wg["b"],
+            excite=True,
+        )
+        port2 = RectWGPort(
+            csx=csx,
+            box=port2_box,
+            excite_direction=0,
+            a=wg["a"],
+            b=wg["b"],
+            excite=False,
+        )
+        efields = None
+        if view_field:
+            efield = FieldDump(
+                csx=csx,
+                box=[
+                    [-wg_len / 2, -wg["a"] / 2, -wg["b"] / 2],
+                    [wg_len / 2, wg["a"] / 2, wg["b"] / 2],
+                ],
+            )
+            efields = [efield]
+        network = Network(csx=csx, ports=[port1, port2])
+        sim = Simulation(
+            fdtd=fdtd,
+            csx=csx,
+            center_freq=center_freq,
+            half_bandwidth=half_bandwidth,
+            boundary_conditions=["PML_8", "PML_8", "PEC", "PEC", "PEC", "PEC"],
+            network=network,
+            field_dumps=efields,
+        )
+        sim.finalize_structure(expand_bounds=[0, 0, 0, 0, 0, 0])
         return sim
