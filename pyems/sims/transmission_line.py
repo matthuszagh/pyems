@@ -6,7 +6,7 @@ import sys
 from functools import partial
 import numpy as np
 import matplotlib.pyplot as plt
-from pyems.port import MicrostripPort, CPWPort, RectWGPort, standard_waveguides
+from pyems.port import MicrostripPort, CPWPort, RectWaveguidePort
 from pyems.pcb import PCB
 from pyems.network import Network
 from pyems.simulation import Simulation, sweep
@@ -399,32 +399,22 @@ class RectWGSimulation:
             [wg_len, wg["a"] / 2, wg["b"] / 2],
             [wg_len - port_len, -wg["a"] / 2, -wg["b"] / 2],
         ]
-        port1 = RectWGPort(
-            csx=csx,
-            box=port1_box,
-            excite_direction=0,
-            a=wg["a"],
-            b=wg["b"],
-            excite=True,
+        port1 = RectWaveguidePort(
+            csx=csx, box=port1_box, propagation_axis=0, excite=True,
         )
-        port2 = RectWGPort(
-            csx=csx,
-            box=port2_box,
-            excite_direction=0,
-            a=wg["a"],
-            b=wg["b"],
-            excite=False,
+        port2 = RectWaveguidePort(
+            csx=csx, box=port2_box, propagation_axis=0, excite=False,
         )
-        efields = None
+        efields = []
         if view_field:
             efield = FieldDump(
                 csx=csx,
                 box=[
-                    [0, -wg["a"] / 2, -wg["b"] / 2],
-                    [wg_len, wg["a"] / 2, wg["b"] / 2],
+                    [-port_len, -wg["a"] / 2, -wg["b"] / 2],
+                    [wg_len + port_len, wg["a"] / 2, wg["b"] / 2],
                 ],
             )
-            efields = [efield]
+            efields.append(efield)
         network = Network(csx=csx, ports=[port1, port2])
         sim = Simulation(
             fdtd=fdtd,

@@ -587,39 +587,53 @@ class CPWPort(PlanarPort):
         return feed_boxes
 
 
-class WaveguidePort(Port):
+class RectWaveguidePort(Port):
     """
-    Waveguide port base class.
+    Rectangular waveguide port base class.
     """
 
     def __init__(
         self,
         csx: ContinuousStructure,
         box: List[List[float]],
-        excite_direction: int,
-        E_WG_func,
-        H_WG_func,
-        kc,
+        propagation_axis: int,
+        mode_name: str = "TE10",
         excite: bool = False,
         delay: float = 0,
         transform_args=None,
     ):
         """
         :param box: 2D list where first list is x,y,z of the first
-            corner and second list is x,y,z of second corner.
-        :param excite_direction: The direction that the excitation
-            propagates.  Set to 0, 1, or 2, for x, y, or z.
+            corner and second list is x,y,z of second corner.  The
+            waveguide width and height are computed from this box.
+        :param propagation_axis: Direction the waveguide is facing.
+            Set to 0, 1, or 2, for x, y, or z.
+        :param mode_name: Waveguide propagation mode.  If you don't
+            know this you probably want the default.  Otherwise, see
+            Pozar (4e) p.110 for more information.
         :param excite: If True, add an excitation to the port.
         """
         super().__init__(csx, excite)
         self.box = np.array(box, np.float)
-        self.excite_direction = excite_direction
-        self.E_func = E_WG_func
-        self.H_func = H_WG_func
-        self.kc = kc
+        self.propagation_axis = propagation_axis
+        self.mode_name = mode_name
+        self.excite = excite
         self.delay = delay
         self.transform_args = transform_args
 
+        # set later
+        self.te = None
+        self.e_func = [0, 0, 0]
+        self.h_func = [0, 0, 0]
+        self.kc = None
+        self.direction = None
+        self.a = None
+        self.b = None
+
+        self._set_width_height()
+        self._set_direction()
+        self._parse_mode_name()
+        self._set_func()
         self._set_feed()
         self._set_probes()
 
@@ -637,6 +651,7 @@ class WaveguidePort(Port):
         """
         self.freq = np.array(freq)
         k = wavenumber(self.freq)
+        self._calc_cutoff_wavenumber()
         self._calc_beta(k)
         self._calc_z0(k)
         [vprobe.read(sim_dir=sim_dir, freq=freq) for vprobe in self.vprobes]
@@ -646,11 +661,102 @@ class WaveguidePort(Port):
         self._calc_v_inc(v, i)
         self._calc_v_ref(v, i)
 
+    def _set_width_height(self) -> None:
+        """
+        Set the waveguide width (a) and height (b) based on the box
+        dimensions and propagation axis.  The width is always taken to
+        be the larger of the two.
+        """
+        dimensions = [
+            np.abs(self.box[1][dim] - self.box[0][dim]) for dim in range(3)
+        ]
+        del dimensions[self.propagation_axis]
+        self.a = np.amax(dimensions)
+        self.b = np.amin(dimensions)
+
+    def _parse_mode_name(self) -> None:
+        """
+        Parse mode_name argument to extract mode information.
+        """
+        assert len(self.mode_name) == 4, "Invalid mode definition"
+        if self.mode_name.startswith("TE"):
+            self.te = True
+        else:
+            self.te = False
+        self.m = float(self.mode_name[2])
+        self.n = float(self.mode_name[3])
+
+        assert (
+            self.te
+        ), "Currently only TE-modes are supported! Mode found: {}".format(
+            self.mode_name
+        )
+
+    def _set_direction(self) -> None:
+        """
+        Compute whether the port faces in the positive or negative
+        direction of propagation_axis.
+        """
+        self.direction = np.sign(
+            self.box[1][self.propagation_axis]
+            - self.box[0][self.propagation_axis]
+        )
+
+    def _set_func(self) -> None:
+        """
+        """
+        ny_p = (self.propagation_axis + 1) % 3
+        ny_pp = (self.propagation_axis + 2) % 3
+
+        xyz = "xyz"
+        if self.box[0][ny_p] != 0:
+            name_p = "({}-{})".format(xyz[ny_p], self.box[0][ny_p])
+        else:
+            name_p = xyz[ny_p]
+        if self.box[0][ny_pp] != 0:
+            name_pp = "({}-{})".format(xyz[ny_p], self.box[0][ny_p])
+        else:
+            name_pp = xyz[ny_p]
+
+        if self.n > 0:
+            self.e_func[ny_p] = "{}*cos({}*{})*sin({}*{})".format(
+                self.n / self.b,
+                self.m * np.pi / self.a,
+                name_p,
+                self.n * np.pi / self.b,
+                name_pp,
+            )
+        if self.m > 0:
+            self.e_func[ny_pp] = "{}*sin({}*{})*cos({}*{})".format(
+                -1 * self.m / self.a,
+                self.m * np.pi / self.a,
+                name_p,
+                self.n * np.pi / self.b,
+                name_pp,
+            )
+
+        if self.m > 0:
+            self.h_func[ny_p] = "{}*sin({}*{})*cos({}*{})".format(
+                self.m / self.a,
+                self.m * np.pi / self.a,
+                name_p,
+                self.n * np.pi / self.b,
+                name_pp,
+            )
+        if self.n > 0:
+            self.h_func[ny_pp] = "{}*cos({}*{})*sin({}*{})".format(
+                self.n / self.b,
+                self.m * np.pi / self.a,
+                name_p,
+                self.n * np.pi / self.b,
+                name_pp,
+            )
+
     def _calc_beta(self, k) -> None:
         """
         Calculate the propagation constant.
         """
-        self.beta = np.sqrt(k ** 2 - self.kc ** 2)
+        self.beta = np.sqrt((k ** 2) - (self.kc ** 2))
 
     def _calc_z0(self, k) -> None:
         """
@@ -662,32 +768,28 @@ class WaveguidePort(Port):
         """
         Set measurement probes.
         """
-        m_start = np.array(self.box[0])
-        m_stop = np.array(self.box[1])
-        m_start[self.excite_direction] = m_stop[self.excite_direction]
+        probe_start = np.array(self.box[0])
+        probe_stop = np.array(self.box[1])
+        probe_start[self.propagation_axis] = probe_stop[self.propagation_axis]
 
         self.vprobes = [
             Probe(
                 csx=self.csx,
-                box=[m_start, m_stop],
+                box=[probe_start, probe_stop],
                 p_type=10,
                 transform_args=self.transform_args,
-                mode_function=self.E_func,
+                mode_function=self.e_func,
             )
         ]
 
-        direction = np.sign(
-            self.box[1][self.excite_direction]
-            - self.box[0][self.excite_direction]
-        )
         self.iprobes = [
             Probe(
                 csx=self.csx,
-                box=[m_start, m_stop],
+                box=[probe_start, probe_stop],
                 p_type=11,
                 transform_args=self.transform_args,
-                weight=direction,
-                mode_function=self.H_func,
+                weight=self.direction,
+                mode_function=self.h_func,
             )
         ]
 
@@ -696,134 +798,23 @@ class WaveguidePort(Port):
         Set excitation feed.
         """
         if self.excite:
-            e_start = np.array(self.box[0])
-            e_stop = np.array(self.box[1])
-            e_stop[self.excite_direction] = e_start[self.excite_direction]
-            e_vec = np.ones(3)
-            e_vec[self.excite_direction] = 0
-            weight_func = [str(x) for x in self.E_func]
+            feed_start = np.array(self.box[0])
+            feed_stop = np.array(self.box[1])
+            feed_stop[self.propagation_axis] = feed_start[
+                self.propagation_axis
+            ]
+            feed_vec = np.ones(3)
+            feed_vec[self.propagation_axis] = 0
+            weight_func = [str(x) for x in self.e_func]
             feed = Feed(
                 csx=self.csx,
                 box=self.box,
-                excite_direction=e_vec,
+                excite_direction=feed_vec,
                 excite_type=0,
                 weight_func=weight_func,
                 delay=self.delay,
             )
             self.feeds.append(feed)
-
-
-class RectWGPort(WaveguidePort):
-    """
-    Rectangular waveguide port.
-    """
-
-    def __init__(
-        self,
-        csx: ContinuousStructure,
-        box: List[List[float]],
-        excite_direction: int,
-        a: float,
-        b: float,
-        mode_name: str = "TE10",
-        excite: bool = False,
-        delay: float = 0,
-        transform_args=None,
-    ):
-        """
-        :param a: Width of rectangular waveguide port (in m).
-        :param b: Height of rectangular waveguide port (in m).
-        :param mode_name: Waveguide propagation mode.  If you don't
-            know this you probably want the default.  Otherwise, see
-            Pozar (4e) p.110 for more information.
-        """
-        self.csx = csx
-        self.box = box
-        self.excite_direction = excite_direction
-        self.a = a
-        self.b = b
-        self.mode_name = mode_name
-        self.excite = excite
-        self.ny_P = (self.excite_direction + 1) % 3
-        self.ny_PP = (self.excite_direction + 2) % 3
-
-        self.WG_mode = mode_name
-        assert len(self.WG_mode) == 4, "Invalid mode definition"
-        if self.WG_mode.startswith("TE"):
-            self.TE = True
-            self.TM = False
-        else:
-            self.TE = False
-            self.TM = True
-        self.m = float(self.WG_mode[2])
-        self.n = float(self.WG_mode[3])
-
-        assert (
-            self.TE
-        ), "Currently only TE-modes are supported! Mode found: {}".format(
-            self.WG_mode
-        )
-
-        # TODO everything below needs to be refactored.
-        xyz = "xyz"
-        if self.box[0][self.ny_P] != 0:
-            name_P = "({}-{})".format(xyz[self.ny_P], self.box[0][self.ny_P])
-        else:
-            name_P = xyz[self.ny_P]
-        if self.box[0][self.ny_PP] != 0:
-            name_PP = "({}-{})".format(xyz[self.ny_P], self.box[0][self.ny_P])
-        else:
-            name_PP = xyz[self.ny_P]
-
-        self._calc_cutoff_wavenumber()
-
-        E_func = [0, 0, 0]
-        H_func = [0, 0, 0]
-        if self.n > 0:
-            E_func[self.ny_P] = "{}*cos({}*{})*sin({}*{})".format(
-                self.n / self.b,
-                self.m * np.pi / self.a,
-                name_P,
-                self.n * np.pi / self.b,
-                name_PP,
-            )
-        if self.m > 0:
-            E_func[self.ny_PP] = "{}*sin({}*{})*cos({}*{})".format(
-                -1 * self.m / self.a,
-                self.m * np.pi / self.a,
-                name_P,
-                self.n * np.pi / self.b,
-                name_PP,
-            )
-
-        if self.m > 0:
-            H_func[self.ny_P] = "{}*sin({}*{})*cos({}*{})".format(
-                self.m / self.a,
-                self.m * np.pi / self.a,
-                name_P,
-                self.n * np.pi / self.b,
-                name_PP,
-            )
-        if self.n > 0:
-            H_func[self.ny_PP] = "{}*cos({}*{})*sin({}*{})".format(
-                self.n / self.b,
-                self.m * np.pi / self.a,
-                name_P,
-                self.n * np.pi / self.b,
-                name_PP,
-            )
-
-        super().__init__(
-            csx=self.csx,
-            box=self.box,
-            excite_direction=self.excite_direction,
-            E_WG_func=E_func,
-            H_WG_func=H_func,
-            kc=self.kc,
-            excite=self.excite,
-            delay=delay,
-            transform_args=transform_args,
-        )
 
     def _calc_cutoff_wavenumber(self) -> None:
         """
