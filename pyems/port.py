@@ -99,6 +99,14 @@ class Port(ABC):
         [iprobe.snap_to_mesh(mesh) for iprobe in self.iprobes]
         [feed.snap_to_mesh(mesh) for feed in self.feeds]
 
+    def frequency(self) -> np.array:
+        """
+        Get the frequency bins used for this port.
+        """
+        if not self._data_readp():
+            raise RuntimeError("Must call calc() before retreiving values.")
+        return self.freq
+
     def incident_voltage(self) -> np.array:
         """
         Get the incident voltage.  This can be used to calculate
@@ -111,7 +119,7 @@ class Port(ABC):
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return np.concatenate(([self.freq], [np.absolute(self.v_inc)])).T
+        return np.abs(self.v_inc)
 
     def reflected_voltage(self) -> np.array:
         """
@@ -125,7 +133,7 @@ class Port(ABC):
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return np.concatenate(([self.freq], [np.absolute(self.v_ref)])).T
+        return np.abs(self.v_ref)
 
     def impedance(self) -> np.array:
         """
@@ -138,7 +146,7 @@ class Port(ABC):
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return np.concatenate(([self.freq], [np.absolute(self.z0)])).T
+        return np.abs(self.z0)
 
     # def incident_power(self) -> np.array:
     #     """
@@ -322,18 +330,18 @@ class PlanarPort(Port):
         self.freq = np.array(freq)
         [vprobe.read(sim_dir=sim_dir, freq=freq) for vprobe in self.vprobes]
         [iprobe.read(sim_dir=sim_dir, freq=freq) for iprobe in self.iprobes]
-        v = self.vprobes[1].get_freq_data()[:, 1]
+        v = self.vprobes[1].get_freq_data()[1]
         i = 0.5 * (
-            self.iprobes[0].get_freq_data()[:, 1]
-            + self.iprobes[1].get_freq_data()[:, 1]
+            self.iprobes[0].get_freq_data()[1]
+            + self.iprobes[1].get_freq_data()[1]
         )
         dv = (
-            self.vprobes[2].get_freq_data()[:, 1]
-            - self.vprobes[0].get_freq_data()[:, 1]
+            self.vprobes[2].get_freq_data()[1]
+            - self.vprobes[0].get_freq_data()[1]
         ) / (self.vprobes[2].box[0][0] - self.vprobes[0].box[0][0])
         di = (
-            self.iprobes[1].get_freq_data()[:, 1]
-            - self.iprobes[0].get_freq_data()[:, 1]
+            self.iprobes[1].get_freq_data()[1]
+            - self.iprobes[0].get_freq_data()[1]
         ) / (self.iprobes[1].box[0][0] - self.iprobes[0].box[0][0])
 
         self._calc_beta(v, i, dv, di)
@@ -656,8 +664,8 @@ class RectWaveguidePort(Port):
         self._calc_z0(k)
         [vprobe.read(sim_dir=sim_dir, freq=freq) for vprobe in self.vprobes]
         [iprobe.read(sim_dir=sim_dir, freq=freq) for iprobe in self.iprobes]
-        v = self.vprobes[0].get_freq_data()[:, 1]
-        i = self.iprobes[0].get_freq_data()[:, 1]
+        v = self.vprobes[0].get_freq_data()[1]
+        i = self.iprobes[0].get_freq_data()[1]
         self._calc_v_inc(v, i)
         self._calc_v_ref(v, i)
 

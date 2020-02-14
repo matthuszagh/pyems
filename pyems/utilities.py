@@ -12,17 +12,25 @@ def pretty_print(
     data: np.array, col_names: List[str], prec: List[int], out_file=sys.stdout,
 ) -> None:
     """
-    Print table (2D numpy array) in appropriately-sized columns.
+    Data is multidimensional list, where each inner list corresponds
+    to a column.
     """
+    extra_space = 3
     data = np.array(data)
     col_widths = [
-        int(_val_digits(np.amax(np.absolute(data[:, col]))) + prec[col] + 2)
+        int(
+            _val_digits(np.amax(np.absolute(data[col])))
+            + prec[col]
+            + 2
+            + extra_space
+        )
         for col in range(len(col_names))
     ]
     for i, col in enumerate(col_names):
         out_file.write("{:{width}}".format(col, width=col_widths[i]))
     out_file.write("\n")
 
+    data = data.T
     for row in data:
         for i, val in enumerate(row):
             out_file.write(
@@ -39,7 +47,7 @@ def _val_digits(val: float) -> int:
     integral portion of a value.
     """
     # assume negative for simplicity
-    extra_digits = 1
+    extra_digits = 2
 
     if val < 10:
         return extra_digits + 1

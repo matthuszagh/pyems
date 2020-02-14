@@ -49,11 +49,12 @@ class MicrostripSimulation:
         sim.simulate()
         sim.view_field()
         net_ports = sim.get_network().get_ports()
+        freq = net_ports[0].frequency()
         z0 = net_ports[0].impedance()
-        pretty_print(data=[z0[:, 0] / 1e9, z0[:, 1]], col_names=["freq", "z0"])
+        pretty_print(data=[freq / 1e9, z0], col_names=["freq", "z0"])
         if plot:
             plt.figure()
-            plt.plot(z0[:, 0], z0[:, 1])
+            plt.plot(freq, z0)
             plt.show()
 
     def microstrip_width_sweep(
@@ -195,11 +196,12 @@ class GCPWSimulation:
         sim.view_field()
         sim.save_field("tmp")
         net_ports = sim.get_network().get_ports()
+        freq = net_ports[0].frequency()
         z0 = net_ports[0].impedance()
-        pretty_print(data=[z0[:, 0] / 1e9, z0[:, 1]], col_names=["freq", "z0"])
+        pretty_print(data=[freq / 1e9, z0], col_names=["freq", "z0"])
         if plot:
             plt.figure()
-            plt.plot(z0[:, 0], z0[:, 1])
+            plt.plot(freq, z0)
             plt.show()
 
     def gcpw_width_sweep(
@@ -366,19 +368,20 @@ class RectWGSimulation:
         sim.simulate()
         sim.view_field()
         net_ports = sim.get_network().get_ports()
+        freq = net_ports[0].frequency()
         z0 = net_ports[0].impedance()
         s11 = sim.get_network().s_param(1, 1)
         s12 = sim.get_network().s_param(1, 2)
         pretty_print(
-            data=np.array([z0[:, 0] / 1e9, z0[:, 1], s11[:, 1], s12[:, 1]]).T,
+            data=np.array([freq / 1e9, z0, s11, s12]),
             col_names=["freq", "z0", "s11", "s12"],
             prec=[4, 4, 4, 4],
         )
         if plot:
             plt.figure()
-            plt.plot(z0[:, 0], z0[:, 1])
-            plt.plot(z0[:, 0], s11[:, 1])
-            plt.plot(z0[:, 0], s12[:, 1])
+            plt.plot(freq, z0)
+            plt.plot(freq, s11)
+            plt.plot(freq, s12)
             plt.show()
 
     def _gen_rectwg_sim(

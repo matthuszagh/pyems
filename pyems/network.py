@@ -83,10 +83,10 @@ class Network:
         i -= 1
         j -= 1
         s = 20 * np.log10(
-            self.ports[i].reflected_voltage()[:, 1]
-            / self.ports[j].incident_voltage()[:, 1]
+            self.ports[i].reflected_voltage()
+            / self.ports[j].incident_voltage()
         )
-        return np.concatenate(([self.freq], [s])).T
+        return s
 
     def get_mesh(self) -> Mesh:
         """

@@ -107,7 +107,7 @@ class Probe:
         if not self._data_readp():
             raise ValueError("Must call read() before retreiving data.")
         else:
-            return np.array([self.freq, self.f_data]).T
+            return np.array([self.freq, self.f_data])
 
     def get_time_data(self):
         """
