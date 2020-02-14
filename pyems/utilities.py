@@ -1,8 +1,7 @@
 import sys
 from typing import List
 import numpy as np
-
-C0 = 299792458
+from CSXCAD.CSXCAD import ContinuousStructure
 
 
 # TODO should set max precision instead of precision list. Precision
@@ -149,17 +148,29 @@ def max_priority() -> int:
     return 999
 
 
-def wavelength(freq: np.array) -> np.array:
+def speed_of_light(unit: float) -> float:
+    """
+    """
+    return 299792458 / unit
+
+
+def wavelength(freq: np.array, unit: float) -> np.array:
     """
     Calculate the wavelength for a given frequency of light.  This
     presently assumes that the light is travelling through a vacuum.
     """
-    return C0 / freq
+    return speed_of_light(unit) / freq
 
 
-def wavenumber(freq: np.array) -> np.array:
+def wavenumber(freq: np.array, unit: float) -> np.array:
     """
     Calculate the wavenumber for a given frequency of light.  Assumes
     light is travelling through a vacuum.
     """
-    return 2 * np.pi * freq / C0
+    return 2 * np.pi * freq / speed_of_light(unit)
+
+
+def get_unit(csx: ContinuousStructure) -> float:
+    """
+    """
+    return csx.GetGrid().GetDeltaUnit()

@@ -11,7 +11,7 @@ from pyems.pcb import PCB
 from pyems.network import Network
 from pyems.simulation import Simulation, sweep
 from pyems.field_dump import FieldDump
-from pyems.utilities import pretty_print, table_interp_val
+from pyems.utilities import pretty_print, table_interp_val, get_unit
 from pyems import calc
 from openEMS import openEMS
 from CSXCAD.CSXCAD import ContinuousStructure
@@ -30,20 +30,21 @@ class MicrostripSimulation:
     """
     """
 
-    def microstrip_width_z0(
+    def width_z0(
         self,
         center_freq: float,
         half_bandwidth: float,
         width: float,
         pcb: PCB,
+        unit: float = 1,
         plot=False,
     ):
         """
         Find the characteristic impedance of a microstrip transmission
         line for a given width.
         """
-        sim = self._gen_microstrip_sim(
-            center_freq, half_bandwidth, width, pcb, view_field=True
+        sim = self._gen_sim(
+            center_freq, half_bandwidth, width, pcb, unit=unit, view_field=True
         )
         sim.view_network()
         sim.simulate()
@@ -57,76 +58,82 @@ class MicrostripSimulation:
             plt.plot(freq, z0)
             plt.show()
 
-    def microstrip_width_sweep(
-        self,
-        pcb: PCB,
-        center_freq: float,
-        half_bandwidth: float,
-        z0_target: float,
-        center_width: float = None,
-        width_dev_factor: float = 0.1,
-        num_points: int = 11,
-        processes: int = 11,
-        plot: bool = False,
-    ):
-        """
-        """
-        if center_width is None:
-            center_width = 1e3 * calc.wheeler_z0_width(
-                z0=z0_target,
-                t=pcb.layer_thickness()[0],
-                er=pcb.epsr_at_freq(center_freq),
-                h=pcb.layer_separation()[0],
-            )
-        widths = np.linspace(
-            center_width * (1 - width_dev_factor),
-            center_width * (1 + width_dev_factor),
-            num_points,
-        )
-        sims = [
-            self._gen_microstrip_sim(center_freq, half_bandwidth, width, pcb)
-            for width in widths
-        ]
-        func = partial(_imped_at_freq, freq=center_freq)
-        sim_vals = sweep(sims=sims, func=func, processes=processes)
-        analytic_vals = [
-            calc.wheeler_z0(
-                w=1e-3 * width,
-                t=pcb.layer_thickness()[0],
-                er=pcb.epsr_at_freq(center_freq),
-                h=pcb.layer_separation()[0],
-            )
-            for width in widths
-        ]
-        pretty_print(
-            data=[widths, sim_vals, analytic_vals],
-            col_names=["width", "sim", "wheeler"],
-        )
-        if plot:
-            plt.figure()
-            plt.plot(widths, sim_vals)
-            plt.plot(widths, analytic_vals)
-            plt.show()
+    # def width_sweep(
+    #     self,
+    #     pcb: PCB,
+    #     center_freq: float,
+    #     half_bandwidth: float,
+    #     z0_target: float,
+    #     center_width: float = None,
+    #     width_dev_factor: float = 0.1,
+    #     num_points: int = 11,
+    #     processes: int = 11,
+    #     plot: bool = False,
+    # ):
+    #     """
+    #     Find the impedance for a range of widths.
+    #     """
+    #     if center_width is None:
+    #         center_width = 1e3 * calc.wheeler_z0_width(
+    #             z0=z0_target,
+    #             t=pcb.layer_thickness()[0],
+    #             er=pcb.epsr_at_freq(center_freq),
+    #             h=pcb.layer_separation()[0],
+    #         )
+    #     widths = np.linspace(
+    #         center_width * (1 - width_dev_factor),
+    #         center_width * (1 + width_dev_factor),
+    #         num_points,
+    #     )
+    #     sims = [
+    #         self._gen_sim(center_freq, half_bandwidth, width, pcb)
+    #         for width in widths
+    #     ]
+    #     func = partial(_imped_at_freq, freq=center_freq)
+    #     sim_vals = sweep(sims=sims, func=func, processes=processes)
+    #     analytic_vals = [
+    #         calc.wheeler_z0(
+    #             w=1e-3 * width,
+    #             t=pcb.layer_thickness()[0],
+    #             er=pcb.epsr_at_freq(center_freq),
+    #             h=pcb.layer_separation()[0],
+    #         )
+    #         for width in widths
+    #     ]
+    #     pretty_print(
+    #         data=[widths, sim_vals, analytic_vals],
+    #         col_names=["width", "sim", "wheeler"],
+    #     )
+    #     if plot:
+    #         plt.figure()
+    #         plt.plot(widths, sim_vals)
+    #         plt.plot(widths, analytic_vals)
+    #         plt.show()
 
-    def _gen_microstrip_sim(
+    def _gen_sim(
         self,
         center_freq: float,
         half_bandwidth: float,
         width: float,
         pcb: PCB,
+        unit: float = 1,
         view_field: bool = False,
     ) -> Simulation:
         """
         """
-        width *= 1e-3
         fdtd = openEMS(EndCriteria=1e-5)
         csx = ContinuousStructure()
-        trace_len = 100e-3
-        sub_width = 40e-3
+        csx.GetGrid().SetDeltaUnit(unit)
+        trace_len = 100
+        sub_width = 40
         micro_port = MicrostripPort(
             csx=csx,
             bounding_box=[
-                [-trace_len / 2, -width / 2, -pcb.layer_separation()[0]],
+                [
+                    -trace_len / 2,
+                    -width / 2,
+                    -pcb.layer_separation(get_unit(csx))[0],
+                ],
                 [trace_len / 2, width / 2, 0],
             ],
             thickness=pcb.layer_thickness()[0],
@@ -140,7 +147,11 @@ class MicrostripSimulation:
         )
         substrate.AddBox(
             priority=0,
-            start=[-trace_len / 2, -sub_width / 2, -pcb.layer_separation()[0]],
+            start=[
+                -trace_len / 2,
+                -sub_width / 2,
+                -pcb.layer_separation(get_unit(csx))[0],
+            ],
             stop=[trace_len / 2, sub_width / 2, 0],
         )
         efields = None
@@ -151,7 +162,7 @@ class MicrostripSimulation:
                     [
                         -trace_len / 2,
                         -sub_width / 2,
-                        -pcb.layer_separation()[0],
+                        -pcb.layer_separation(get_unit(csx))[0],
                     ],
                     [trace_len / 2, sub_width / 2, 0],
                 ],
@@ -175,7 +186,7 @@ class GCPWSimulation:
     """
     """
 
-    def gcpw_width_z0(
+    def width_z0(
         self,
         center_freq: float,
         half_bandwidth: float,
@@ -188,7 +199,7 @@ class GCPWSimulation:
         Find the characteristic impedance of a grounded coplanar
         waveguide transmission line for a given width.
         """
-        sim = self._gen_gcpw_sim(
+        sim = self._gen_sim(
             center_freq, half_bandwidth, width, gap, pcb, view_field=True
         )
         sim.view_network()
@@ -204,51 +215,51 @@ class GCPWSimulation:
             plt.plot(freq, z0)
             plt.show()
 
-    def gcpw_width_sweep(
-        self,
-        pcb: PCB,
-        center_freq: float,
-        half_bandwidth: float,
-        z0_target: float,
-        center_width: float = None,
-        gap: float = None,
-        width_dev_factor: float = 0.1,
-        num_points: int = 11,
-        processes: int = 11,
-        plot: bool = False,
-        out_file=sys.stdout,
-    ):
-        """
-        """
-        if center_width is None:
-            center_width = 1e3 * calc.wheeler_z0_width(
-                z0=z0_target,
-                t=pcb.layer_thickness()[0],
-                er=pcb.epsr_at_freq(center_freq),
-                h=pcb.layer_separation()[0],
-            )
-        widths = np.linspace(
-            center_width * (1 - width_dev_factor),
-            center_width * (1 + width_dev_factor),
-            num_points,
-        )
-        sims = [
-            self._gen_gcpw_sim(center_freq, half_bandwidth, width, gap, pcb)
-            for width in widths
-        ]
-        func = partial(_imped_at_freq, freq=center_freq)
-        sim_vals = sweep(sims=sims, func=func, processes=processes)
-        pretty_print(
-            data=[widths, sim_vals],
-            col_names=["width", "sim"],
-            out_file=out_file,
-        )
-        if plot:
-            plt.figure()
-            plt.plot(widths, sim_vals)
-            plt.show()
+    # def width_sweep(
+    #     self,
+    #     pcb: PCB,
+    #     center_freq: float,
+    #     half_bandwidth: float,
+    #     z0_target: float,
+    #     center_width: float = None,
+    #     gap: float = None,
+    #     width_dev_factor: float = 0.1,
+    #     num_points: int = 11,
+    #     processes: int = 11,
+    #     plot: bool = False,
+    #     out_file=sys.stdout,
+    # ):
+    #     """
+    #     """
+    #     if center_width is None:
+    #         center_width = 1e3 * calc.wheeler_z0_width(
+    #             z0=z0_target,
+    #             t=pcb.layer_thickness()[0],
+    #             er=pcb.epsr_at_freq(center_freq),
+    #             h=pcb.layer_separation()[0],
+    #         )
+    #     widths = np.linspace(
+    #         center_width * (1 - width_dev_factor),
+    #         center_width * (1 + width_dev_factor),
+    #         num_points,
+    #     )
+    #     sims = [
+    #         self._gen_sim(center_freq, half_bandwidth, width, gap, pcb)
+    #         for width in widths
+    #     ]
+    #     func = partial(_imped_at_freq, freq=center_freq)
+    #     sim_vals = sweep(sims=sims, func=func, processes=processes)
+    #     pretty_print(
+    #         data=[widths, sim_vals],
+    #         col_names=["width", "sim"],
+    #         out_file=out_file,
+    #     )
+    #     if plot:
+    #         plt.figure()
+    #         plt.plot(widths, sim_vals)
+    #         plt.show()
 
-    def _gen_gcpw_sim(
+    def _gen_sim(
         self,
         center_freq: float,
         half_bandwidth: float,
@@ -268,11 +279,15 @@ class GCPWSimulation:
         cpw_port = CPWPort(
             csx=csx,
             bounding_box=[
-                [-trace_len / 2, -width / 2, -pcb.layer_separation()[0]],
+                [
+                    -trace_len / 2,
+                    -width / 2,
+                    -pcb.layer_separation(get_unit(csx))[0],
+                ],
                 [trace_len / 2, width / 2, 0],
             ],
             gap=gap,
-            thickness=pcb.layer_thickness()[0],
+            thickness=pcb.layer_thickness(get_unit(csx))[0],
             conductivity=pcb.metal_conductivity(),
             excite=True,
         )
@@ -283,13 +298,17 @@ class GCPWSimulation:
         )
         substrate.AddBox(
             priority=0,
-            start=[-trace_len / 2, -sub_width / 2, -pcb.layer_separation()[0]],
+            start=[
+                -trace_len / 2,
+                -sub_width / 2,
+                -pcb.layer_separation(get_unit(csx))[0],
+            ],
             stop=[trace_len / 2, sub_width / 2, 0],
         )
         ground = csx.AddConductingSheet(
             "Ground",
             conductivity=pcb.metal_conductivity(),
-            thickness=pcb.layer_thickness()[0],
+            thickness=pcb.layer_thickness(get_unit(csx))[0],
         )
         ground.AddBox(
             priority=999,
@@ -350,7 +369,7 @@ class GCPWSimulation:
         return sim
 
 
-class RectWGSimulation:
+class RectWaveguideSimulation:
     """
     """
 
@@ -429,7 +448,7 @@ class RectWGSimulation:
             field_dumps=efields,
         )
         sim.finalize_structure(
-            strict_bounds=[
+            simulation_bounds=[
                 -port_len,
                 wg_len + port_len,
                 -wg["a"] / 2,

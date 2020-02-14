@@ -6,7 +6,7 @@ from openEMS import openEMS
 from CSXCAD.CSXCAD import ContinuousStructure
 from pyems.network import Network
 from pyems.field_dump import FieldDump
-from pyems.utilities import wavelength
+from pyems.utilities import wavelength, get_unit
 
 
 class Simulation:
@@ -61,12 +61,14 @@ class Simulation:
         return self.field_dumps
 
     def finalize_structure(
-        self, expand_bounds: List[float], strict_bounds: List[float] = None
+        self, expand_bounds: List[float], simulation_bounds: List[float] = None
     ) -> None:
         self.network.generate_mesh(
-            lambda_min=wavelength(self.center_freq + self.half_bandwidth),
+            min_wavelength=wavelength(
+                self.center_freq + self.half_bandwidth, get_unit(self.csx)
+            ),
             expand_bounds=expand_bounds,
-            strict_bounds=strict_bounds,
+            simulation_bounds=simulation_bounds,
         )
 
     def simulate(self, num_freq_bins: int = 501) -> None:

@@ -45,7 +45,7 @@ from CSXCAD.CSXCAD import ContinuousStructure
 from CSXCAD.CSTransform import CSTransform
 from pyems.automesh import Mesh
 from pyems.probe import Probe
-from pyems.utilities import max_priority, wavenumber
+from pyems.utilities import max_priority, wavenumber, get_unit
 from pyems.feed import Feed
 
 
@@ -77,7 +77,7 @@ class Port(ABC):
         """
         self.csx = csx
         self.excite = excite
-        self.unit = 1
+        self.unit = get_unit(self.csx)
         self.feeds = []
         self.vprobes = []
         self.iprobes = []
@@ -278,8 +278,10 @@ class PlanarPort(Port):
             z-component in the 2nd inner list.  The z-value of the 1st
             list corresponds to the position of the ground plane.
             This is used for determining the position/length of feed
-            and measurement probes.  All dimensions are in mm.
-        :param thickness: Metal trace thickness (in mm).
+            and measurement probes.  Units are whatever you set the
+            CSX unit to, defaults to m.
+        :param thickness: Metal trace thickness.  Units are whatever
+            you set the CSX unit to, defaults to m.
         :param conductivity: Metal conductivity (in S/m).  The default
             uses the conductivity of copper.
         :param feed_resistance: The feeding resistance value.  The
@@ -304,8 +306,8 @@ class PlanarPort(Port):
             uses `AddTransform('RotateAxis', 'z', rotate)`.
         """
         super().__init__(csx, excite)
-        self.box = np.multiply(self.unit, bounding_box)
-        self.thickness = self.unit * thickness
+        self.box = np.array(bounding_box)
+        self.thickness = thickness
         self.conductivity = conductivity
         self.feed_resistance = feed_resistance
         self.feed_shift = feed_shift
@@ -338,11 +340,15 @@ class PlanarPort(Port):
         dv = (
             self.vprobes[2].get_freq_data()[1]
             - self.vprobes[0].get_freq_data()[1]
-        ) / (self.vprobes[2].box[0][0] - self.vprobes[0].box[0][0])
+        ) / (
+            self.unit * (self.vprobes[2].box[0][0] - self.vprobes[0].box[0][0])
+        )
         di = (
             self.iprobes[1].get_freq_data()[1]
             - self.iprobes[0].get_freq_data()[1]
-        ) / (self.iprobes[1].box[0][0] - self.iprobes[0].box[0][0])
+        ) / (
+            self.unit * (self.iprobes[1].box[0][0] - self.iprobes[0].box[0][0])
+        )
 
         self._calc_beta(v, i, dv, di)
         self._calc_z0(v, i, dv, di)
@@ -496,11 +502,11 @@ class MicrostripPort(PlanarPort):
         """
         if self.excite:
             feed = Feed(
-                self.csx,
-                self._get_feed_box(),
-                [0, 0, 1],
-                self.feed_resistance,
-                self.transform_args,
+                csx=self.csx,
+                box=self._get_feed_box(),
+                excite_direction=[0, 0, 1],
+                resistance=self.feed_resistance,
+                transform_args=self.transform_args,
             )
             self.feeds.append(feed)
 
@@ -679,8 +685,8 @@ class RectWaveguidePort(Port):
             np.abs(self.box[1][dim] - self.box[0][dim]) for dim in range(3)
         ]
         del dimensions[self.propagation_axis]
-        self.a = np.amax(dimensions)
-        self.b = np.amin(dimensions)
+        self.a = self.unit * np.amax(dimensions)
+        self.b = self.unit * np.amin(dimensions)
 
     def _parse_mode_name(self) -> None:
         """

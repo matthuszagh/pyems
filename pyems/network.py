@@ -6,6 +6,7 @@ import numpy as np
 from CSXCAD.CSXCAD import ContinuousStructure
 from pyems.port import Port
 from pyems.automesh import Mesh
+from pyems.utilities import wavelength, get_unit
 
 
 class Network:
@@ -39,23 +40,29 @@ class Network:
 
     def generate_mesh(
         self,
-        lambda_min: float,
+        min_wavelength: float,
+        metal_res=1 / 20,
+        other_res=1 / 10,
         smooth: List[float] = [1.5, 1.5, 1.5],
+        min_lines: int = 9,
         expand_bounds: List[float] = [0, 0, 0, 0, 0, 0],
         simulation_bounds: List[float] = None,
     ) -> None:
         """
         Generate the mesh for the network.  This should be called
         after all ports and structures are added.
+
+        :param metal_res: The factor to multiply by the minimum
+            wavelength when determining the metal resolution.
         """
         if self.mesh is None:
             self.mesh = Mesh(
                 self.csx,
-                lmin=lambda_min,
-                mres=1 / 20,
-                sres=1 / 10,
+                lmin=min_wavelength,
+                mres=metal_res,
+                sres=other_res,
                 smooth=smooth,
-                min_lines=9,
+                min_lines=min_lines,
                 expand_bounds=expand_bounds,
                 simulation_bounds=simulation_bounds,
             )

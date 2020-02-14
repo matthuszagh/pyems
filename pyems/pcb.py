@@ -66,10 +66,10 @@ class PCB:
         """
         return self.layer_thick
 
-    def layer_separation(self):
+    def layer_separation(self, unit: float):
         """
         """
-        return self.layer_sep
+        return self.layer_sep / unit
 
     def metal_conductivity(self):
         """
