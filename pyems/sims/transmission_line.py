@@ -389,7 +389,7 @@ class RectWGSimulation:
     ):
         """
         """
-        fdtd = openEMS(EndCriteria=1e-5, MaxTime=1e-7)
+        fdtd = openEMS(EndCriteria=1e-5)
         csx = ContinuousStructure()
 
         wg_len = 1000e-3
@@ -429,7 +429,6 @@ class RectWGSimulation:
             field_dumps=efields,
         )
         sim.finalize_structure(
-            expand_bounds=[0, 0, 0, 0, 0, 0],
             strict_bounds=[
                 -port_len,
                 wg_len + port_len,

@@ -17,3 +17,186 @@ user would need to pass several parameters for frequency range, PCB
 height, trace height, dielectric, etc. These simulations are located
 in the pyems/sims directory, which also serves as the examples
 directory for new users hoping to learn pyems's API.
+
+* Usage
+For working examples, see the examples/ and pyems/sims/ directories.
+
+The general way to run a simulation is via the following steps:
+
+1. Create ~openEMS()~ and ~ContinuousStructure()~ objects. This is how
+   pyems connects up to openems. e.g.
+
+#+begin_src python
+from openEMS import openEMS
+from CSXCAD.CSXCAD import ContinuousStructure
+
+fdtd = openEMS(EndCriteria=1e-5, MaxTime=1e-7)
+csx = ContinuousStructure()
+
+# optionally, set the length unit for all further dimensions
+# this uses mm (default is m)
+csx.GetGrid().SetDeltaUnit(1e-3)
+#+end_src
+
+2. Create your ports. Ports are meant to be just like the ports you
+   might connect up to a VNA. They function as the interface to the
+   device you're testing and are used to calculate S-parameters.
+
+#+begin_src python
+wg_len = 1000
+port_len = wg_len / 5
+port1_box = [
+    [0, -wg["a"] / 2, -wg["b"] / 2],
+    [port_len, wg["a"] / 2, wg["b"] / 2],
+]
+port2_box = [
+    [wg_len, wg["a"] / 2, wg["b"] / 2],
+    [wg_len - port_len, -wg["a"] / 2, -wg["b"] / 2],
+]
+# interface described in the class docstring
+port1 = RectWaveguidePort(
+    csx=csx, box=port1_box, propagation_axis=0, excite=True,
+)
+port2 = RectWaveguidePort(
+    csx=csx, box=port2_box, propagation_axis=0, excite=False,
+)
+#+end_src
+
+3. Instantiate a network from the ports. A network is like an
+   electrical network. It serves as a convenient wrapper for a
+   collection of ports, which allows you to calculate S-parameters
+   from port numbers, rather than needing to get the data from the
+   ports and do the calculations yourself. Make sure to place the
+   ports in the order you'd like them numbered.
+
+#+begin_src python
+network = Network(csx=csx, ports=[port1, port2])
+#+end_src
+
+4. Add any other structures you'd like to the simulation.
+
+#+begin_src python
+# this simulation wouldn't make sense to run, but gives you an idea of
+# the process.
+from pyems.pcb import common_pcbs
+
+pcb=common_pcbs["oshpark4"]
+substrate = csx.AddMaterial(
+    "substrate",
+    epsilon=pcb.epsr_at_freq(center_freq),
+    kappa=pcb.substrate_conductivity(),
+)
+substrate.AddBox(
+    priority=0,
+    start=[-trace_len / 2, -sub_width / 2, -pcb.layer_separation()[0]],
+    stop=[trace_len / 2, sub_width / 2, 0],
+)
+#+end_src
+
+5. Add any field dumps for viewing the time-domain data after the
+simulation completes.
+
+#+begin_src python
+efield = FieldDump(
+    csx=csx,
+    box=[
+        [
+            -trace_len / 2,
+            -sub_width / 2,
+            -pcb.layer_separation()[0] / 2,
+        ],
+        [
+            trace_len / 2,
+            sub_width / 2,
+            -pcb.layer_separation()[0] / 2,
+        ],
+    ],
+)
+efields = [efield]
+#+end_src
+
+6. Create a simulation object. This is ties together all parts of the
+   simulation and is the interface used for post-processing and
+   viewing/printing results.
+
+#+begin_src python
+sim = Simulation(
+    fdtd=fdtd,
+    csx=csx,
+    center_freq=5.6e9,
+    half_bandwidth=1e9,
+    boundary_conditions=["PML_8", "PML_8", "MUR", "MUR", "PEC", "MUR"],
+    network=network,
+    field_dumps=efields,
+)
+#+end_src
+
+7. Finalize the structure, which generates the mesh.
+
+#+begin_src python
+sim.finalize_structure(expand_bounds=[0, 0, 10, 10, 0, 10])
+#+end_src
+
+8. View the generated structure and mesh if you want.
+
+#+begin_src python
+sim.view_network()
+#+end_src
+
+9. Simulate.
+
+#+begin_src python
+sim.simulate()
+#+end_src
+
+10. When the simulation completes, you can retreive/print/view the
+    results in a variety of ways.
+
+#+begin_src python
+import matplotlib.pyplot as plt
+import numpy as np
+from pyems.utilities import pretty_print
+
+sim.view_field()
+net_ports = sim.get_network().get_ports()
+freq = net_ports[0].frequency()
+z0 = net_ports[0].impedance()
+s11 = sim.get_network().s_param(1, 1)
+s12 = sim.get_network().s_param(1, 2)
+pretty_print(
+    data=np.array([freq / 1e9, z0, s11, s12]),
+    col_names=["freq", "z0", "s11", "s12"],
+    prec=[4, 4, 4, 4],
+)
+
+plt.figure()
+plt.plot(freq, z0)
+plt.plot(freq, s11)
+plt.plot(freq, s12)
+plt.show()
+#+end_src
+
+This process is very similar to how you would do it using OpenEMS's
+native interface. The biggest difference is that you no longer need to
+worry about mesh generation and you don't need to worry about when
+ports are generated in relation to when the mesh is generated. Port
+placement is automatically adjusted for the generated mesh.
+
+More generally, I've tried to design the interface in a way that
+directs the process of creating/running a simulation and makes it easy
+to retrieve useful results. For instance, instead of doing
+
+#+begin_src python
+s12 = = port1.uf.ref ./ port2.uf.inc
+#+end_src
+
+you would write
+
+#+begin_src python
+s12 = sim.get_network().s_param(1, 2)
+#+end_src
+
+It's not that the first way is particularly challenging, but it
+requires you to know that OpenEMS ports store their voltage frequency
+values as ~uf~ and the incident and reflected waves as ~inc~ and
+~ref~.
