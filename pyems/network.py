@@ -68,7 +68,8 @@ class Network:
             )
             self.mesh.generate_mesh()
 
-        [port.snap_to_mesh(mesh=self.mesh) for port in self.ports]
+        if self.ports is not None:
+            [port.snap_to_mesh(mesh=self.mesh) for port in self.ports]
         self._write_csx()
 
     def s_param(self, i: int, j: int) -> np.array:
@@ -100,6 +101,11 @@ class Network:
         Get the network mesh.
         """
         return self.mesh
+
+    def get_sim_box(self) -> List[List[float]]:
+        """
+        """
+        return self.csx.GetGrid().GetSimArea()
 
     def calc(self, sim_dir, freq) -> None:
         """
