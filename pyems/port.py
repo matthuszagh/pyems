@@ -664,7 +664,7 @@ class RectWaveguidePort(Port):
             bins as the ones used in the excitation.
         """
         self.freq = np.array(freq)
-        k = wavenumber(self.freq)
+        k = wavenumber(self.freq, 1)  # use m to be consistent with a,b
         self._calc_cutoff_wavenumber()
         self._calc_beta(k)
         self._calc_z0(k)
@@ -674,6 +674,49 @@ class RectWaveguidePort(Port):
         i = self.iprobes[0].get_freq_data()[1]
         self._calc_v_inc(v, i)
         self._calc_v_ref(v, i)
+
+    def add_metal_shell(self, thickness: float) -> None:
+        """
+        """
+        shell_prop = self.csx.AddMetal("rect_wg_metal")
+        back_face = self._shell_face_box(
+            const_dim=self.propagation_axis,
+            const_dim_idx=0,
+            thickness=thickness,
+        )
+        shell_prop.AddBox(start=back_face[0], stop=back_face[1])
+        dims = list(range(3))
+        del dims[self.propagation_axis]
+        for dim in dims:
+            for i in range(2):
+                face = self._shell_face_box(
+                    const_dim=dim, const_dim_idx=i, thickness=thickness
+                )
+                shell_prop.AddBox(start=face[0], stop=face[1])
+
+    def _shell_face_box(
+        self, const_dim: int, const_dim_idx: int, thickness: float,
+    ) -> List[List[float]]:
+        """
+        """
+        box = [[None, None, None], [None, None, None]]
+        for dim in range(3):
+            if dim == const_dim:
+                box[0][dim] = self.box[const_dim_idx][dim] + (
+                    self._dim_outer_dir(dim, const_dim_idx) * thickness
+                )
+                box[1][dim] = self.box[const_dim_idx][dim]
+            else:
+                box[0][dim] = self.box[0][dim] - thickness
+                box[1][dim] = self.box[1][dim] + thickness
+
+        return box
+
+    def _dim_outer_dir(self, dim: int, dim_idx: int) -> int:
+        """
+        """
+        other_dim_idx = (dim_idx + 1) % 2
+        return np.sign(self.box[dim_idx][dim] - self.box[other_dim_idx][dim])
 
     def _set_width_height(self) -> None:
         """
@@ -732,37 +775,41 @@ class RectWaveguidePort(Port):
         else:
             name_pp = xyz[ny_p]
 
+        # TODO ???
+        unit = get_unit(self.csx)
+        a = self.a / unit
+        b = self.b / unit
         if self.n > 0:
             self.e_func[ny_p] = "{}*cos({}*{})*sin({}*{})".format(
-                self.n / self.b,
-                self.m * np.pi / self.a,
+                self.n / b,
+                self.m * np.pi / a,
                 name_p,
-                self.n * np.pi / self.b,
+                self.n * np.pi / b,
                 name_pp,
             )
         if self.m > 0:
             self.e_func[ny_pp] = "{}*sin({}*{})*cos({}*{})".format(
-                -1 * self.m / self.a,
-                self.m * np.pi / self.a,
+                -self.m / a,
+                self.m * np.pi / a,
                 name_p,
-                self.n * np.pi / self.b,
+                self.n * np.pi / b,
                 name_pp,
             )
 
         if self.m > 0:
             self.h_func[ny_p] = "{}*sin({}*{})*cos({}*{})".format(
-                self.m / self.a,
-                self.m * np.pi / self.a,
+                self.m / a,
+                self.m * np.pi / a,
                 name_p,
-                self.n * np.pi / self.b,
+                self.n * np.pi / b,
                 name_pp,
             )
         if self.n > 0:
             self.h_func[ny_pp] = "{}*cos({}*{})*sin({}*{})".format(
-                self.n / self.b,
-                self.m * np.pi / self.a,
+                self.n / b,
+                self.m * np.pi / a,
                 name_p,
-                self.n * np.pi / self.b,
+                self.n * np.pi / b,
                 name_pp,
             )
 
@@ -770,7 +817,7 @@ class RectWaveguidePort(Port):
         """
         Calculate the propagation constant.
         """
-        self.beta = np.sqrt((k ** 2) - (self.kc ** 2))
+        self.beta = np.sqrt(np.power(k, 2) - np.power(self.kc, 2))
 
     def _calc_z0(self, k) -> None:
         """
@@ -822,7 +869,7 @@ class RectWaveguidePort(Port):
             weight_func = [str(x) for x in self.e_func]
             feed = Feed(
                 csx=self.csx,
-                box=self.box,
+                box=[feed_start, feed_stop],
                 excite_direction=feed_vec,
                 excite_type=0,
                 weight_func=weight_func,
@@ -837,7 +884,8 @@ class RectWaveguidePort(Port):
         See Pozar (4e) p.112 for derivation.
         """
         self.kc = np.sqrt(
-            ((self.m * np.pi / self.a) ** 2) + ((self.n * np.pi / self.b) ** 2)
+            np.power((self.m * np.pi / self.a), 2)
+            + np.power((self.n * np.pi / self.b), 2)
         )
 
 
