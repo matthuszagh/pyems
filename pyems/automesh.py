@@ -177,7 +177,26 @@ class Mesh:
                 self._smooth_mesh_lines(dim)
 
         # set calculated mesh lines
-        self._add_lines_to_mesh()
+        self._set_mesh_from_lines()
+
+        self._emit_warning()
+
+    def add_line(self, dim: int, pos: float, smooth: bool = True) -> None:
+        """
+        Add a mesh line.  The mesh line will be fixed.  I.e. smoothing
+        / thirds rule cannot shift this line.  This shouldn't
+        generally be necessary, and using it might be a sign that
+        you're generating the mesh incorrectly.
+
+        :param dim: Dimension to which to add the line.
+        :param pos: Position of the new mesh line.
+        :param smooth: Resmooth mesh lines after adding.
+        """
+        insort_left(self.mesh_lines[dim], pos)
+        insort_left(self.const_meshes[dim], pos)
+        if smooth:
+            self._smooth_mesh_lines(dim)
+        self._set_mesh_from_lines()
 
     def nearest_mesh_line(self, dim: int, pos: float) -> (int, float):
         """
@@ -313,10 +332,13 @@ class Mesh:
             else:
                 last_pos = pos
 
-    def _add_lines_to_mesh(self):
+    def _set_mesh_from_lines(self):
         """
-        Generates the actual CSX mesh structure from lines.
+        Generates the actual CSX mesh structure from mesh_lines.  This
+        clears any preexisting mesh.
         """
+        for i in range(3):
+            self.mesh.ClearLines(i)
         for dim in range(3):
             for line in self.mesh_lines[dim]:
                 self.mesh.AddLine(dim, line)
@@ -351,10 +373,16 @@ class Mesh:
         )
         spacing = []
         last_pos = self.mesh_lines[dim][lower_idx]
-        for idx in range(lower_idx + 1, upper_idx):
-            spacing.append(self.mesh_lines[dim][idx] - last_pos)
-            last_pos = self.mesh_lines[dim][idx]
-        return sum(spacing) / len(spacing)
+        if lower_idx + 1 == upper_idx:
+            return (
+                self.mesh_lines[dim][upper_idx]
+                - self.mesh_lines[dim][lower_idx]
+            )
+        else:
+            for idx in range(lower_idx + 1, upper_idx):
+                spacing.append(self.mesh_lines[dim][idx] - last_pos)
+                last_pos = self.mesh_lines[dim][idx]
+            return sum(spacing) / len(spacing)
 
     def _split_bounds(self, lower, upper, dim):
         """
@@ -643,3 +671,20 @@ class Mesh:
                 if metal:
                     insort_left(self.metal_bounds[dim], ibound[0])
                     insort_left(self.metal_bounds[dim], ibound[1])
+
+    def _emit_warning(self):
+        """
+        Display a warning for a possibly bad mesh.
+        """
+        if self.smallest_res < self._max_dim() / 1000:
+            print(
+                "The generated mesh appears to be very fine. "
+                "Have you used consistent length units?"
+            )
+
+    def _max_dim(self):
+        """
+        Compute the max dimension of the mesh.
+        """
+        dims = [lines[-1] - lines[0] for lines in self.mesh_lines]
+        return np.amax(dims)
