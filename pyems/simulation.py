@@ -32,10 +32,16 @@ class Simulation:
         self.fdtd.SetCSX(self.csx)
         self.center_freq = center_freq
         self.half_bandwidth = half_bandwidth
+        self.boundary_conditions = boundary_conditions
         self.fdtd.SetGaussExcite(center_freq, half_bandwidth)
         self.fdtd.SetBoundaryCond(boundary_conditions)
         self.network = network
         self.field_dumps = field_dumps
+
+        # set later
+        self.freq = None
+        self.sim_dir = None
+        self.nf2ff = None
 
     def set_network(self, network: Network) -> None:
         """
@@ -63,6 +69,8 @@ class Simulation:
     def finalize_structure(
         self, expand_bounds: List[float], simulation_bounds: List[float] = None
     ) -> None:
+        """
+        """
         self.network.generate_mesh(
             min_wavelength=wavelength(
                 self.center_freq + self.half_bandwidth, get_unit(self.csx)
@@ -71,17 +79,84 @@ class Simulation:
             simulation_bounds=simulation_bounds,
         )
 
-    def simulate(self, num_freq_bins: int = 501) -> None:
+    def simulate(self, num_freq_bins: int = 501, nf2ff: bool = False) -> None:
         """
         """
-        freq_bins = np.linspace(
+        if nf2ff:
+            non_pml_box = self._get_sim_box_exc_pml()
+            self.nf2ff = self.fdtd.CreateNF2FFBox(
+                start=non_pml_box[0], stop=non_pml_box[1]
+            )
+
+        self.freq = np.linspace(
             self.center_freq - self.half_bandwidth,
             self.center_freq + self.half_bandwidth,
             num_freq_bins,
         )
-        tmpdir = tempfile.mkdtemp()
-        self.fdtd.Run(tmpdir, cleanup=True)
-        self.network.calc(sim_dir=tmpdir, freq=freq_bins)
+        self.sim_dir = tempfile.mkdtemp()
+        self.fdtd.Run(self.sim_dir, cleanup=True)
+        self.network.calc(sim_dir=self.sim_dir, freq=self.freq)
+
+    def _get_sim_box_exc_pml(self) -> np.array:
+        """
+        Return the simulation box volume excluding the PML boundaries.
+        """
+        exc_cells = np.zeros(6, dtype=int)
+        for i, bound in enumerate(self.boundary_conditions):
+            split = bound.split("_")
+            if split[0] == "PML":
+                exc_cells[i] = int(split[1]) + 1
+
+        mesh = self.network.get_mesh().mesh_lines
+        start = np.array(
+            [
+                mesh[0][exc_cells[0]],
+                mesh[1][exc_cells[2]],
+                mesh[2][exc_cells[4]],
+            ]
+        )
+        stop = np.array(
+            [
+                mesh[0][-1 - exc_cells[1]],
+                mesh[1][-1 - exc_cells[3]],
+                mesh[2][-1 - exc_cells[5]],
+            ]
+        )
+        return np.concatenate(([start], [stop]))
+
+    def calc_nf2ff(
+        self,
+        theta: np.array = np.arange(0, 180, 1),
+        phi: np.array = np.arange(0, 360, 1),
+        radius: float = 1,
+        center: List[float] = [0, 0, 0],
+    ):
+        """
+        Perform a near-field to far-field transformation and return
+        the results.
+        """
+        if self.nf2ff is None:
+            raise RuntimeError(
+                "You must set nf2ff to True in simulate() in order to perform "
+                "this calculation."
+            )
+        print(
+            "Running near-field to far-field transformation. "
+            "This may take a while."
+        )
+        return self.nf2ff.CalcNF2FF(
+            sim_path=self.sim_dir,
+            freq=self.center_freq,
+            theta=theta,
+            phi=phi,
+            radius=radius,
+            center=center,
+        )
+
+    def get_freq(self) -> np.array:
+        """
+        """
+        return self.freq
 
     def view_network(self) -> None:
         """
