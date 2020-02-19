@@ -167,7 +167,7 @@ def wavenumber(freq: np.array, unit: float) -> np.array:
     Calculate the wavenumber for a given frequency of light.  Assumes
     light is travelling through a vacuum.
     """
-    return 2 * np.pi * freq / speed_of_light(unit)
+    return np.array(2 * np.pi / wavelength(freq, unit))
 
 
 def get_unit(csx: ContinuousStructure) -> float:
