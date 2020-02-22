@@ -1,4 +1,6 @@
 import tempfile
+import shutil
+from pathlib import Path
 from typing import List
 import numpy as np
 from multiprocessing import Pool
@@ -93,9 +95,32 @@ class Simulation:
             self.center_freq + self.half_bandwidth,
             num_freq_bins,
         )
-        self.sim_dir = tempfile.mkdtemp()
+        self.sim_dir = self._get_sim_dir()
         self.fdtd.Run(self.sim_dir, cleanup=True)
         self.network.calc(sim_dir=self.sim_dir, freq=self.freq)
+
+    def _get_sim_dir(self, dir_name: str = "sim", tmp: bool = False):
+        """
+        Create and return a simulation directory where simulation data
+        should be stored.
+
+        :param dir_name: Name of the directory.  Created in the
+            current directory.  This has no effect if tmp is set to
+            True.
+        :param tmp: If True, use a system temporary directory.
+
+        :returns: The simulation directory path.
+        """
+        if tmp:
+            self.sim_dir = tempfile.mkdtemp()
+        else:
+            path = Path(dir_name).resolve()
+            self.sim_dir = str(path)
+            if path.exists():
+                shutil.rmtree(dir_name)
+            path.mkdir()
+
+        return self.sim_dir
 
     def _get_sim_box_exc_pml(self) -> np.array:
         """
@@ -130,6 +155,7 @@ class Simulation:
         phi: np.array = np.arange(0, 360, 1),
         radius: float = 1,
         center: List[float] = [0, 0, 0],
+        verbose: int = 1,
     ):
         """
         Perform a near-field to far-field transformation and return
@@ -140,10 +166,10 @@ class Simulation:
                 "You must set nf2ff to True in simulate() in order to perform "
                 "this calculation."
             )
-        print(
-            "Running near-field to far-field transformation. "
-            "This may take a while."
-        )
+        # print(
+        #     "Running near-field to far-field transformation. "
+        #     "This may take a while."
+        # )
         return self.nf2ff.CalcNF2FF(
             sim_path=self.sim_dir,
             freq=self.center_freq,
@@ -151,6 +177,7 @@ class Simulation:
             phi=phi,
             radius=radius,
             center=center,
+            verbose=verbose,
         )
 
     def get_freq(self) -> np.array:

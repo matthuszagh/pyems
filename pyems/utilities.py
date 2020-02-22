@@ -1,4 +1,5 @@
 import sys
+from bisect import bisect_left
 from typing import List
 import numpy as np
 from CSXCAD.CSXCAD import ContinuousStructure
@@ -52,6 +53,30 @@ def _val_digits(val: float) -> int:
         return extra_digits + 1
 
     return int(np.log10(val)) + extra_digits
+
+
+def array_index(val, arr) -> int:
+    """
+    Return the index of the closest array value to a given value.
+
+    :param val: The value for which the closest index is desired.
+    :param arr: The array from which the index is computed.
+
+    :returns: The array index whose corresponding value is nearest the
+              given value.
+    """
+    lbound_idx = bisect_left(arr, val)
+    lbound = arr[lbound_idx]
+    if lbound_idx == len(arr):
+        return lbound_idx
+
+    ubound_idx = lbound_idx + 1
+    ubound = arr[ubound_idx]
+
+    if val - lbound < ubound - val:
+        return lbound_idx
+    else:
+        return ubound_idx
 
 
 def float_cmp(a: float, b: float, tol: float) -> bool:

@@ -52,7 +52,9 @@ class MicrostripSimulation:
         net_ports = sim.get_network().get_ports()
         freq = net_ports[0].frequency()
         z0 = net_ports[0].impedance()
-        pretty_print(data=[freq / 1e9, z0], col_names=["freq", "z0"])
+        pretty_print(
+            data=[freq / 1e9, z0], col_names=["freq", "z0"], prec=[4, 4]
+        )
         if plot:
             plt.figure()
             plt.plot(freq, z0)

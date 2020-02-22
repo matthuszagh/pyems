@@ -39,6 +39,7 @@ after mesh generation.
 """
 
 from abc import ABC, abstractmethod
+from bisect import bisect_left
 from typing import List
 import numpy as np
 from CSXCAD.CSXCAD import ContinuousStructure
@@ -84,6 +85,8 @@ class Port(ABC):
         self.freq = None
         self.v_inc = None
         self.v_ref = None
+        self.i_inc = None
+        self.i_ref = None
         self.p_inc = None
         self.p_ref = None
         self.z0 = None
@@ -112,10 +115,8 @@ class Port(ABC):
         Get the incident voltage.  This can be used to calculate
         S-parameters.
 
-        :returns: A 2D numpy array where the first column contains
-                  frequency values and the second contains the
-                  corresponding port incident voltage values.  It is
-                  sorted by ascending frequency.
+        :returns: Array of the incident voltage magnitude for each
+            frequency bin.
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
@@ -126,10 +127,8 @@ class Port(ABC):
         Get the reflected voltage.  This can be used to calculate
         S-parameters.
 
-        :returns: A 2D numpy array where the first column contains
-                  frequency values and the second contains the
-                  corresponding port reflected voltage values.  It is
-                  sorted by ascending frequency.
+        :returns: Array of the reflected voltage magnitude for each
+            frequency bin.
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
@@ -139,42 +138,35 @@ class Port(ABC):
         """
         Get the characteristic impedance.
 
-        :returns: A 2D numpy array where the first column contains
-                  frequency values and the second contains the
-                  corresponding port characteristic impedance values.
-                  It is sorted by ascending frequency.
+        :returns: Array of the characteristic impedance magnitude for
+            each frequency bin.
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
         return np.abs(self.z0)
 
-    # def incident_power(self) -> np.array:
-    #     """
-    #     Get the incident power.  This is generally useful for
-    #     calculating S-parameters.
+    def incident_power(self) -> np.array:
+        """
+        Get the incident power.  This is generally useful for
+        calculating efficiency.
 
-    #     :returns: A 2D numpy array where the first column contains
-    #               frequency values and the second contains the
-    #               corresponding port incident power values.  It is
-    #               sorted by ascending frequency.
-    #     """
-    #     if not self._data_readp():
-    #         raise RuntimeError("Must call calc() before retreiving values.")
-    #     return np.concatenate(([self.freq], [np.absolute(self.p_inc)])).T
+        :returns: Array of the incident power magnitude for each
+            frequency bin.
+        """
+        if not self._data_readp():
+            raise RuntimeError("Must call calc() before retreiving values.")
+        return np.abs(self.p_inc)
 
-    # def reflected_power(self) -> np.array:
-    #     """
-    #     Get the reflected power.  This is generally useful for
-    #     calculating S-parameters.
+    def reflected_power(self) -> np.array:
+        """
+        Get the reflected power.
 
-    #     :returns: A 2D numpy array where the first column contains
-    #               frequency values and the second contains the
-    #               corresponding port reflected power values.  It is
-    #               sorted by ascending frequency.
-    #     """
-    #     if not self._data_readp():
-    #         raise RuntimeError("Must call calc() before retreiving values.")
-    #     return np.array(([self.freq], [np.absolute(self.p_ref)])).T
+        :returns: Array of the reflected power magnitude for each
+            frequency bin.
+        """
+        if not self._data_readp():
+            raise RuntimeError("Must call calc() before retreiving values.")
+        return np.abs(self.p_ref)
 
     def _calc_v_inc(self, v, i) -> None:
         """
@@ -197,6 +189,48 @@ class Port(ABC):
         :param i: Total current.
         """
         self.v_ref = (v - (self.z0 * i)) / 2
+
+    def _calc_i_inc(self, v, i) -> None:
+        """
+        Calculate the incident current.
+
+        :param v: Total voltage.
+        :param i: Total current.
+        """
+        self.i_inc = (i + (v / self.z0)) / 2
+
+    def _calc_i_ref(self, v, i) -> None:
+        """
+        Calculate the reflected current.
+
+        :param v: Total voltage.
+        :param i: Total current.
+        """
+        self.i_ref = (i - (v / self.z0)) / 2
+
+    def _calc_p_inc(self) -> None:
+        """
+        Calculate the port's incident power wave.
+        """
+        if self.v_inc is None or self.i_inc is None:
+            raise RuntimeError(
+                "Must calculate incoming and reflected "
+                "voltages / current before power."
+            )
+        else:
+            self.p_inc = (1 / 2) * (self.v_inc * np.conj(self.i_inc))
+
+    def _calc_p_ref(self) -> None:
+        """
+        Calculate the port's reflected power wave.
+        """
+        if self.v_ref is None or self.i_ref is None:
+            raise RuntimeError(
+                "Must calculate incoming and reflected "
+                "voltages / current before power."
+            )
+        else:
+            self.p_ref = (1 / 2) * (self.v_ref * np.conj(self.i_ref))
 
     def _data_readp(self) -> bool:
         """
@@ -352,11 +386,12 @@ class PlanarPort(Port):
 
         self._calc_beta(v, i, dv, di)
         self._calc_z0(v, i, dv, di)
-        # k = 1 / np.sqrt(np.absolute(self.z0))
         self._calc_v_inc(v, i)
         self._calc_v_ref(v, i)
-        # self._calc_power_inc(k, v, i)
-        # self._calc_power_ref(k, v, i)
+        self._calc_i_inc(v, i)
+        self._calc_i_ref(v, i)
+        self._calc_p_inc()
+        self._calc_p_ref()
 
     def _calc_beta(self, v, i, dv, di) -> None:
         """
@@ -386,34 +421,6 @@ class PlanarPort(Port):
         ..  math:: Z0 = \sqrt{(R+jwL)/(G+jwC)}
         """
         self.z0 = np.sqrt(v * dv / (i * di))
-
-    # def _calc_power_inc(self, k, v, i) -> None:
-    #     """
-    #     Calculate the port's incident power wave.
-
-    #     ..  math:: a_i = (1/2) k_i(V_i + Z_iI_i)
-
-    #     ..  math:: k_i = sqrt{|Re(Z_i)|}^{-1}
-
-    #     :param k: see equation
-    #     :param v: voltage
-    #     :param i: current
-    #     """
-    #     self.p_inc = (1 / 2) * k * (v + (self.z0 * i))
-
-    # def _calc_power_ref(self, k, v, i) -> None:
-    #     """
-    #     Calculate the port's reflected power wave.
-
-    #     ..  math:: b_i = (1/2) k_i(V_i - Z_iI_i)
-
-    #     ..  math:: k_i = sqrt{|Re(Z_i)|}^{-1}
-
-    #     :param k: see equation
-    #     :param v: voltage
-    #     :param i: current
-    #     """
-    #     self.p_inc = (1 / 2) * k * (v - (np.conjugate(self.z0) * i))
 
     def _set_trace(self) -> None:
         """
@@ -674,6 +681,10 @@ class RectWaveguidePort(Port):
         i = self.iprobes[0].get_freq_data()[1]
         self._calc_v_inc(v, i)
         self._calc_v_ref(v, i)
+        self._calc_i_inc(v, i)
+        self._calc_i_ref(v, i)
+        self._calc_p_inc()
+        self._calc_p_ref()
 
     def add_metal_shell(self, thickness: float) -> None:
         """

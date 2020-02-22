@@ -1,4 +1,5 @@
 from typing import List
+import sys
 import tempfile
 import atexit
 import subprocess
@@ -147,11 +148,18 @@ class Network:
         """
         self.csx.Write2XML(self.csx_file)
 
-    def view(self) -> None:
+    def view(self, prompt: bool = True) -> None:
         """
         View the CSX network.
+
+        :param prompt: Prompt user whether to continue simulation.
         """
         subprocess.run(["AppCSXCAD", self.csx_file])
+        if prompt:
+            ans = input("Continue simulation (y/n)? ")
+            if ans == "n":
+                print("Terminating simulation.")
+                sys.exit(0)
 
     # def _cleanup_files(self) -> None:
     #     """
