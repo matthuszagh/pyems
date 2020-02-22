@@ -23,156 +23,162 @@ For working examples, see the examples/ and pyems/sims/ directories.
 
 The general way to run a simulation is via the following steps:
 
-1. Create ~openEMS()~ and ~ContinuousStructure()~ objects. This is how
-   pyems connects up to openems. e.g.
+Create ~openEMS()~ and ~ContinuousStructure()~ objects. This is how
+pyems connects up to openems. e.g.
 
 #+begin_src python
-from openEMS import openEMS
-from CSXCAD.CSXCAD import ContinuousStructure
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+import CSXCAD as csxcad
+import openEMS as openems
+from pyems.network import Network
+from pyems.utilities import wavelength, array_index
+from pyems.port import RectWaveguidePort, standard_waveguides
+from pyems.simulation import Simulation
+from pyems.field_dump import FieldDump
 
-fdtd = openEMS(EndCriteria=1e-5, MaxTime=1e-7)
-csx = ContinuousStructure()
+fdtd = openems.openEMS(EndCriteria=1e-5)
+csx = csxcad.ContinuousStructure()
 
 # optionally, set the length unit for all further dimensions
 # this uses mm (default is m)
-csx.GetGrid().SetDeltaUnit(1e-3)
+unit = 1e-3
+csx.GetGrid().SetDeltaUnit(unit)
 #+end_src
 
-2. Create your ports. Ports are meant to be just like the ports you
-   might connect up to a VNA. They function as the interface to the
-   device you're testing and are used to calculate S-parameters.
+Create your ports. Ports are meant to be just like the ports you might
+connect up to a VNA. They function as the interface to the device
+you're testing and are used to calculate S-parameters.
 
 #+begin_src python
-wg_len = 1000
-port_len = wg_len / 5
-port1_box = [
-    [0, -wg["a"] / 2, -wg["b"] / 2],
-    [port_len, wg["a"] / 2, wg["b"] / 2],
-]
-port2_box = [
-    [wg_len, wg["a"] / 2, wg["b"] / 2],
-    [wg_len - port_len, -wg["a"] / 2, -wg["b"] / 2],
-]
-# interface described in the class docstring
-port1 = RectWaveguidePort(
-    csx=csx, box=port1_box, propagation_axis=0, excite=True,
+wg = standard_waveguides["WR159"]
+wg_len = 40 * unit
+waveguide_box = np.multiply(
+    1 / unit,
+    [[-wg["a"] / 2, -wg["b"] / 2, -wg_len], [wg["a"] / 2, wg["b"] / 2, 0]],
 )
-port2 = RectWaveguidePort(
-    csx=csx, box=port2_box, propagation_axis=0, excite=False,
+port = RectWaveguidePort(
+    csx=csx, box=waveguide_box, propagation_axis=2, excite=True
 )
+port.add_metal_shell(thickness=5)
 #+end_src
 
-3. Instantiate a network from the ports. A network is like an
-   electrical network. It serves as a convenient wrapper for a
-   collection of ports, which allows you to calculate S-parameters
-   from port numbers, rather than needing to get the data from the
-   ports and do the calculations yourself. Make sure to place the
-   ports in the order you'd like them numbered.
+Add any other structures you like
 
 #+begin_src python
-network = Network(csx=csx, ports=[port1, port2])
+metal = csx.AddMetal("metal")
+stl = metal.AddPolyhedronReader(filename=os.path.abspath("./horn-antenna.stl"))
+stl.ReadFile()
 #+end_src
 
-4. Add any other structures you'd like to the simulation.
+Instantiate a network from the ports. A network is like an electrical
+network. It serves as a convenient wrapper for a collection of ports,
+which allows you to calculate S-parameters from port numbers, rather
+than needing to get the data from the ports and do the calculations
+yourself. Make sure to place the ports in the order you'd like them
+numbered.
 
 #+begin_src python
-# this simulation wouldn't make sense to run, but gives you an idea of
-# the process.
-from pyems.pcb import common_pcbs
-
-pcb=common_pcbs["oshpark4"]
-substrate = csx.AddMaterial(
-    "substrate",
-    epsilon=pcb.epsr_at_freq(center_freq),
-    kappa=pcb.substrate_conductivity(),
+center_freq = 5.6e9
+delta_freq = 5e9
+network = Network(csx=csx, ports=[port])
+network.generate_mesh(
+    min_wavelength=wavelength(center_freq + delta_freq, unit),
+    metal_res=1 / 40,
+    min_lines=2,
+    expand_bounds=[20, 20, 20, 20, 10, 40],
 )
-substrate.AddBox(
-    priority=0,
-    start=[-trace_len / 2, -sub_width / 2, -pcb.layer_separation()[0]],
-    stop=[trace_len / 2, sub_width / 2, 0],
-)
+network._write_csx()
+network.view()
 #+end_src
 
-5. Add any field dumps for viewing the time-domain data after the
+Add any field dumps for viewing the time-domain data after the
 simulation completes.
 
 #+begin_src python
-efield = FieldDump(
-    csx=csx,
-    box=[
-        [
-            -trace_len / 2,
-            -sub_width / 2,
-            -pcb.layer_separation()[0] / 2,
-        ],
-        [
-            trace_len / 2,
-            sub_width / 2,
-            -pcb.layer_separation()[0] / 2,
-        ],
-    ],
-)
-efields = [efield]
+sim_box = network.get_sim_box()
+field_dump = FieldDump(csx=csx, box=sim_box)
 #+end_src
 
-6. Create a simulation object. This is ties together all parts of the
-   simulation and is the interface used for post-processing and
-   viewing/printing results.
+Generate the mesh and optionally view the structure.
+
+#+begin_src python
+network.generate_mesh(
+    min_wavelength=wavelength(center_freq + delta_freq, unit),
+    min_lines=2,
+    expand_bounds=[20, 20, 20, 20, 10, 40],
+)
+network.view()
+#+end_src
+
+Create a simulation object. This is ties together all parts of the
+simulation and is the interface used for post-processing and
+viewing/printing results.
 
 #+begin_src python
 sim = Simulation(
     fdtd=fdtd,
     csx=csx,
-    center_freq=5.6e9,
-    half_bandwidth=1e9,
-    boundary_conditions=["PML_8", "PML_8", "MUR", "MUR", "PEC", "MUR"],
+    center_freq=center_freq,
+    half_bandwidth=delta_freq,
+    boundary_conditions=["PML_8", "PML_8", "PML_8", "PML_8", "PML_8", "PML_8"],
     network=network,
-    field_dumps=efields,
+    field_dumps=[field_dump],
 )
 #+end_src
 
-7. Finalize the structure, which generates the mesh.
+Simulate.
 
 #+begin_src python
-sim.finalize_structure(expand_bounds=[0, 0, 10, 10, 0, 10])
+sim.simulate(nf2ff=True)
 #+end_src
 
-8. View the generated structure and mesh if you want.
+When the simulation completes, you can retreive/print/view the results
+in a variety of ways.
 
 #+begin_src python
-sim.view_network()
-#+end_src
-
-9. Simulate.
-
-#+begin_src python
-sim.simulate()
-#+end_src
-
-10. When the simulation completes, you can retreive/print/view the
-    results in a variety of ways.
-
-#+begin_src python
-import matplotlib.pyplot as plt
-import numpy as np
-from pyems.utilities import pretty_print
-
+# view the time-domain E-field dumps.
 sim.view_field()
-net_ports = sim.get_network().get_ports()
-freq = net_ports[0].frequency()
-z0 = net_ports[0].impedance()
-s11 = sim.get_network().s_param(1, 1)
-s12 = sim.get_network().s_param(1, 2)
-pretty_print(
-    data=np.array([freq / 1e9, z0, s11, s12]),
-    col_names=["freq", "z0", "s11", "s12"],
-    prec=[4, 4, 4, 4],
-)
 
+s11 = network.s_param(1, 1)
+ports = network.get_ports()
+freq = sim.get_freq()
+
+# plot return loss
 plt.figure()
-plt.plot(freq, z0)
 plt.plot(freq, s11)
-plt.plot(freq, s12)
+plt.show()
+
+theta = np.arange(-90, 90, 1)
+phi = np.arange(0, 360, 1)
+
+# perform a near-to-far field transformation
+nf2ff = sim.calc_nf2ff(theta=theta, phi=phi)
+
+horn_width = 109.9 * 1e-3
+horn_height = 80 * 1e-3
+effective_aperture = horn_height * horn_width
+directivity = (
+    effective_aperture * 4 * np.pi / np.power(wavelength(center_freq, 1), 2)
+)
+gain = nf2ff.Dmax[0]
+gain_db = 10 * np.log10(gain)
+
+freq_array = sim.get_freq()
+print("gain:\t\t{:.2f} dB".format(gain_db))
+
+enorm = nf2ff.E_norm[0]
+phi90_idx = array_index(90, phi)
+
+# plot the gain as a function of angle
+plt.plot(theta, 20 * np.log10(enorm[:, 0] / np.amax(enorm[:, 0])) + gain_db)
+plt.show()
+plt.plot(
+    theta,
+    20 * np.log10(enorm[:, phi90_idx] / np.amax(enorm[:, phi90_idx]))
+    + gain_db,
+)
 plt.show()
 #+end_src
 
