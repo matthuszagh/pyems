@@ -193,7 +193,7 @@ directs the process of creating/running a simulation and makes it easy
 to retrieve useful results. For instance, instead of doing
 
 #+begin_src python
-s12 = = port1.uf.ref ./ port2.uf.inc
+s12 = port1.uf.ref ./ port2.uf.inc
 #+end_src
 
 you would write
