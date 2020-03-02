@@ -43,6 +43,11 @@ class BoundedType:
         """
         return [self.lower_bound, self.upper_bound]
 
+    def get_midpoint(self):
+        """
+        """
+        return np.average([self.lower_bound, self.upper_bound])
+
     def size(self):
         """
         """
@@ -511,12 +516,26 @@ class Mesh:
             if btype.get_bounds()[0] == upper:
                 return btype.get_type()
 
+    def _type_above_meshed(self, dim: int, upper: float) -> bool:
+        """
+        """
+        for btype in self.bounded_types[dim]:
+            if btype.get_bounds()[0] == upper:
+                return self._pos_meshed(dim, btype.get_midpoint())
+
     def _type_below(self, dim: int, lower: float) -> Type:
         """
         """
         for btype in self.bounded_types[dim]:
             if btype.get_bounds()[1] == lower:
                 return btype.get_type()
+
+    def _type_below_meshed(self, dim: int, lower: float) -> bool:
+        """
+        """
+        for btype in self.bounded_types[dim]:
+            if btype.get_bounds()[1] == lower:
+                return self._pos_meshed(dim, btype.get_midpoint())
 
     def nearest_mesh_line(self, dim: int, pos: float) -> (int, float):
         """
@@ -685,6 +704,56 @@ class Mesh:
             return True
         return False
 
+    def _lower_spacing(
+        self, dim: int, lower: float, line_below: float, is_metal: bool
+    ) -> float:
+        """
+        Compute spacing at the lower boundary for a bounded type.
+        """
+        if is_metal:
+            lower_spacing = self.metal_res
+        else:
+            lower_spacing = self.nonmetal_res
+
+        if line_below and self._type_below_meshed(dim, lower):
+            factor = 1
+            if self._is_metal_bound(dim, lower) and not self._is_fixed_line(
+                dim, lower
+            ):
+                if self._type_below(dim, lower) == Type.nonmetal:
+                    factor = 3 / 2
+                else:
+                    factor = 3
+            spacing = factor * (lower - line_below)
+            lower_spacing = np.min([lower_spacing, spacing])
+
+        return lower_spacing
+
+    def _upper_spacing(
+        self, dim: int, upper: float, line_above: float, is_metal: bool
+    ) -> float:
+        """
+        Compute spacing at the upper boundary for a bounded type.
+        """
+        if is_metal:
+            upper_spacing = self.metal_res
+        else:
+            upper_spacing = self.nonmetal_res
+
+        if line_above and self._type_above_meshed(dim, upper):
+            factor = 1
+            if self._is_metal_bound(dim, upper) and not self._is_fixed_line(
+                dim, upper
+            ):
+                if self._type_above(dim, upper) == Type.nonmetal:
+                    factor = 3 / 2
+                else:
+                    factor = 3
+            spacing = factor * (line_above - upper)
+            upper_spacing = np.min([upper_spacing, spacing])
+
+        return upper_spacing
+
     def _gen_mesh_in_bounds(
         self,
         dim: int,
@@ -712,37 +781,8 @@ class Mesh:
         # worry about the case where the spacing is small. If its
         # large we assume we haven't meshed the adjacent structure and
         # ignore it.
-        if is_metal:
-            lower_spacing = self.metal_res
-        else:
-            lower_spacing = self.nonmetal_res
-        if line_below and self._pos_meshed(dim, lower):
-            factor = 1
-            if self._is_metal_bound(dim, lower) and not self._is_fixed_line(
-                dim, lower
-            ):
-                if self._type_below(dim, lower) == Type.nonmetal:
-                    factor = 3 / 2
-                else:
-                    factor = 3
-            spacing = factor * (lower - line_below)
-            lower_spacing = np.min([lower_spacing, spacing])
-
-        if is_metal:
-            upper_spacing = self.metal_res
-        else:
-            upper_spacing = self.nonmetal_res
-        if line_above and self._pos_meshed(dim, upper):
-            factor = 1
-            if self._is_metal_bound(dim, upper) and not self._is_fixed_line(
-                dim, upper
-            ):
-                if self._type_above(dim, upper) == Type.nonmetal:
-                    factor = 3 / 2
-                else:
-                    factor = 3
-            spacing = factor * (line_above - upper)
-            upper_spacing = np.min([upper_spacing, spacing])
+        lower_spacing = self._lower_spacing(dim, lower, line_below, is_metal)
+        upper_spacing = self._upper_spacing(dim, upper, line_above, is_metal)
 
         if lower == upper:
             self._add_lines_to_mesh([lower], dim)
