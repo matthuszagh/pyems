@@ -4,6 +4,7 @@ let
   pyems = pkgs.pyems;
   mh-python = pkgs.python3.withPackages (p: with p; [
     numpy
+    scipy
     pathos
     pyems
     matplotlib

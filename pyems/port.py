@@ -43,7 +43,7 @@ from typing import List
 import numpy as np
 from CSXCAD.CSXCAD import ContinuousStructure
 from CSXCAD.CSTransform import CSTransform
-from pyems.automesh_beta import Mesh
+from pyems.automesh import Mesh
 from pyems.probe import Probe
 from pyems.utilities import max_priority, wavenumber, get_unit
 from pyems.feed import Feed
@@ -652,18 +652,27 @@ class CPWPort(PlanarPort):
         )
         v = v1
 
-        i = 0.5 * (
-            self.iprobes[0].get_freq_data()[1]
-            + self.iprobes[1].get_freq_data()[1]
+        i = (
+            0.5
+            * -self._get_direction()
+            * (
+                self.iprobes[0].get_freq_data()[1]
+                + self.iprobes[1].get_freq_data()[1]
+            )
         )
         dv = (v2 - v0) / (
             self.unit * (self.vprobes[2].box[0][0] - self.vprobes[0].box[0][0])
         )
         di = (
-            self.iprobes[1].get_freq_data()[1]
-            - self.iprobes[0].get_freq_data()[1]
-        ) / (
-            self.unit * (self.iprobes[1].box[0][0] - self.iprobes[0].box[0][0])
+            -self._get_direction()
+            * (
+                self.iprobes[1].get_freq_data()[1]
+                - self.iprobes[0].get_freq_data()[1]
+            )
+            / (
+                self.unit
+                * (self.iprobes[1].box[0][0] - self.iprobes[0].box[0][0])
+            )
         )
 
         self._calc_beta(v, i, dv, di)

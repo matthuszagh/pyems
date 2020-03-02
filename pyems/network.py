@@ -43,10 +43,10 @@ class Network:
         self,
         min_wavelength: float,
         metal_res=1 / 20,
-        other_res=1 / 10,
+        nonmetal_res=1 / 10,
         smooth: List[float] = [1.5, 1.5, 1.5],
         min_lines: int = 9,
-        expand_bounds: List[float] = [0, 0, 0, 0, 0, 0],
+        expand_bounds: List[float] = [[0, 0], [0, 0], [0, 0]],
         simulation_bounds: List[float] = None,
     ) -> None:
         """
@@ -60,8 +60,8 @@ class Network:
             self.mesh = Mesh(
                 self.csx,
                 lmin=min_wavelength,
-                mres=metal_res,
-                sres=other_res,
+                metal_res=metal_res,
+                nonmetal_res=nonmetal_res,
                 smooth=smooth,
                 min_lines=min_lines,
                 expand_bounds=expand_bounds,
@@ -91,10 +91,11 @@ class Network:
 
         i -= 1
         j -= 1
-        s = 20 * np.log10(
+        s = (
             self.ports[i].reflected_voltage()
             / self.ports[j].incident_voltage()
         )
+        s = 20 * np.log10(np.abs(s))
         return s
 
     def get_mesh(self) -> Mesh:

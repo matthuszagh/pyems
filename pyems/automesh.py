@@ -1,38 +1,366 @@
 from typing import List
+from enum import Enum
 from bisect import bisect_left, insort_left
+import subprocess
 import numpy as np
-from pyems.utilities import float_cmp
+import scipy.optimize
 from CSXCAD.CSXCAD import ContinuousStructure
+from CSXCAD.CSPrimitives import CSPrimitives
+
+
+class Type(Enum):
+    """
+    Metal is a Metal or ConductingSheet.  Nonmetal is a nonmetal,
+    physical property.
+    """
+
+    metal = 0
+    nonmetal = 1
+
+
+class BoundedType:
+    """
+    A Type with associated positional bounds.  Corresponds to one
+    dimension of a physical structure.
+    """
+
+    def __init__(
+        self, prop_type: Type, lower_bound: float, upper_bound: float
+    ):
+        """
+        """
+        self.prop_type = prop_type
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+
+    def get_type(self):
+        """
+        """
+        return self.prop_type
+
+    def get_bounds(self):
+        """
+        """
+        return [self.lower_bound, self.upper_bound]
+
+    def get_midpoint(self):
+        """
+        """
+        return np.average([self.lower_bound, self.upper_bound])
+
+    def size(self):
+        """
+        """
+        return self.upper_bound - self.lower_bound
+
+
+def _prim_metalp(prim: CSPrimitives) -> bool:
+    """
+    Return True if CSXCAD primitive is a metal.
+    """
+    type_str = prim.GetProperty().GetTypeString()
+    if (
+        type_str == "Metal"
+        or type_str == "ConductingSheet"
+        or type_str == "LumpedElement"
+    ):
+        return True
+    return False
+
+
+def _prim_materialp(prim: CSPrimitives) -> bool:
+    """
+    Return True if CSXCAD primitive is a nonmetal, physical property.
+    """
+    type_str = prim.GetProperty().GetTypeString()
+    if type_str == "Materal":
+        return True
+    return False
+
+
+def _get_prim_bounds(prim: CSPrimitives):
+    """
+    Get the physical boundary of a CSXCAD primitive.
+    """
+    orig_bounds = prim.GetBoundBox()
+    bounds = [[None, None], [None, None], [None, None]]
+    for i in range(3):
+        upper = max(orig_bounds[0][i], orig_bounds[1][i])
+        lower = min(orig_bounds[0][i], orig_bounds[1][i])
+        bounds[i] = [lower, upper]
+    return bounds
+
+
+def _sort_bounded_types(
+    bounded_types: List[List[BoundedType]],
+) -> List[List[BoundedType]]:
+    """
+    Sort the bounded types for each dimension so that the types with
+    the smallest bounds appear first.
+    """
+    new_bounded_types = [[], [], []]
+    for dim, btype_list in enumerate(bounded_types):
+        new_bounded_types[dim] = sorted(btype_list, key=lambda x: x.size())
+    return new_bounded_types
+
+
+def _physical_prims(prims: List[CSPrimitives]) -> List[CSPrimitives]:
+    """
+    Return just the physical primitives from a list of CSXCAD
+    primitives.
+    """
+    physical_prims = []
+    for prim in prims:
+        if _prim_metalp(prim) or _prim_materialp(prim):
+            physical_prims.append(prim)
+
+    return physical_prims
+
+
+def _remove_dups(lst: List[float], fixed: List[float] = []) -> List[float]:
+    """
+    Remove all duplicate items from a sorted list.
+
+    :param lst: The list from which to remove duplicates.
+    :param fixed: A list of elements that must remain in the original
+        list.  If the list contains two elements that are nearly the
+        same, but one is also an item in the fixed list, we should
+        remove the element not in the fixed list.  We can remove a
+        fixed element from the list only if it is duplicated exactly.
+
+    :returns: The original list, but with all duplicate items removed.
+    """
+    new_lst = []
+    last = None
+    for elt in lst:
+        if last is not None:
+            if elt == last:  # can always skip if identical
+                continue
+            elif np.isclose(elt, last) and elt not in fixed:
+                continue
+            elif np.isclose(elt, last) and elt in fixed:
+                del new_lst[-1]
+        last = elt
+        new_lst.append(elt)
+
+    return new_lst
+
+
+def _bounds_from_prims(
+    prims: List[CSPrimitives], fixed: List[List[float]]
+) -> List[List[float]]:
+    """
+    Return a list of all boundary positions.
+
+    :param prims: List of CSXCAD primitives.
+    :param fixed: Fixed bounds that may not be removed.
+
+    :returns: A 3 element list where each element is a list of
+              boundary positions for a dimension.  Each dimension list
+              is sorted and all positions are unique.
+    """
+    dim_bounds = [[], [], []]
+    for prim in prims:
+        prim_bounds = _get_prim_bounds(prim)
+        for dim, bounds in enumerate(prim_bounds):
+            dim_bounds[dim].append(bounds[0])
+            dim_bounds[dim].append(bounds[1])
+
+    for dim, bounds in enumerate(dim_bounds):
+        dim_bounds[dim] = sorted(bounds)
+        dim_bounds[dim] = _remove_dups(dim_bounds[dim], fixed[dim])
+
+    return dim_bounds
+
+
+def _float_inside(val: float, lower: float, upper: float) -> bool:
+    """
+    """
+    if val >= lower and val <= upper:
+        return True
+    return False
+
+
+def _factor_for_num(
+    num: int, smaller_spacing: float, larger_spacing: float, dist: float
+) -> float:
+    """
+    Compute the geometric series factor such that the geometric series
+    sum is equal to a provided distance.
+    """
+    roots = scipy.optimize.fsolve(
+        func=_geom_dist_zero,
+        x0=1.5,
+        args=(num, smaller_spacing, dist),
+        xtol=1e-4,
+    )
+    factor = roots[0]
+    return factor
+
+
+def _factor_ubound(num: int, ratio: float, max_factor: float) -> float:
+    """
+    """
+    return np.min([max_factor, np.power(ratio, 1 / (num - 1))])
+
+
+def _geom_dist(factor: float, num: int, smaller_spacing: float) -> float:
+    """
+    """
+    powers = np.arange(1, num, 1)
+    dist = smaller_spacing * np.sum(np.power(factor, powers))
+    return dist
+
+
+def _geom_dist_zero(
+    factor: float, num: int, smaller_spacing: float, dist: float
+) -> float:
+    """
+    """
+    return _geom_dist(factor, num, smaller_spacing) - dist
+
+
+def _num_for_factor(
+    factor: float, smaller_spacing: float, larger_spacing: float, dist: float
+) -> (float, int):
+    """
+    Find the closest number for a given factor and return that number
+    and associated factor.
+    """
+    num = int(
+        np.ceil(
+            np.log(1 - (((dist / smaller_spacing) + 1) * (1 - factor)))
+            / np.log(factor)
+            + 1
+        )
+    )
+    factor = _factor_for_num(num, smaller_spacing, larger_spacing, dist)
+    return (factor, num)
+
+
+def _geom_series(
+    smaller_spacing: float,
+    larger_spacing: float,
+    dist: float,
+    min_num: int,
+    max_factor: float,
+) -> (float, int):
+    """
+    Compute a geometric series that specifies the spacing between a
+    series of lines.
+    """
+    nlower = np.max([int(np.ceil(dist / larger_spacing)) + 1, min_num])
+    nupper = np.max([int(np.ceil(dist / smaller_spacing)) + 1, min_num])
+
+    if nlower == nupper:
+        num = nlower
+        factor = _factor_for_num(num, smaller_spacing, larger_spacing, dist)
+        while factor >= _factor_ubound(
+            num, larger_spacing / smaller_spacing, max_factor
+        ):
+            num += 1
+            factor = _factor_for_num(
+                num, smaller_spacing, larger_spacing, dist
+            )
+
+        return (factor, num)
+
+    # nlower >= min_num and nlower < nupper
+    nums = np.arange(nlower, nupper + 1, 1)
+    factors = np.array(
+        [
+            _factor_for_num(num, smaller_spacing, larger_spacing, dist)
+            for num in nums
+        ]
+    )
+    factors = np.flip(factors)  # sort factors in ascending order
+    nums = np.flip(nums)  # keep num and factor indices matched
+
+    # retrieve index s.t. factor is strictly less than max factor. we
+    # could add a condition to retrieve the max factor, if available,
+    # but it's helpful to have keep the factor below the max factor so
+    # we can move lines later (e.g. for setting probes)
+    index = bisect_left(factors, max_factor) - 1
+    if index < 0:  # all factors too large
+        factor = max_factor
+        (factor, num) = _num_for_factor(
+            factor, smaller_spacing, larger_spacing, dist
+        )
+        while factor >= max_factor:
+            num += 1
+            factor = _factor_for_num(
+                num, smaller_spacing, larger_spacing, dist
+            )
+        return (factor, num)
+
+    factor = factors[index]
+    num = nums[index]
+    return (factor, num)
+
+
+def _pos_in_bounds(pos: float, lower: float, upper: float) -> bool:
+    """
+    """
+    if pos >= lower and pos <= upper:
+        return True
+    return False
+
+
+def _type_at_pos(prims: List[CSPrimitives], dim: int, pos: float) -> Type:
+    """
+    The material type for a given dimension and position.  If multiple
+    properties exist for the dimension and position, metal is returned
+    if any of the properties are metal and nonmetal is returned
+    otherwise.
+
+    TODO this ignores CSXCAD priorities.  I think this is fine since
+    this only determines the mesh density, but we could always extend
+    this in the future if necessary.
+
+    :param prims: List of physical CSXCAD primitives.
+    :param dim: 0, 1, or 2 for x, y, z.
+    :param pos: Position to check.
+
+    :returns: The type of the material at that position.
+    """
+    for prim in prims:
+        prim_bounds = _get_prim_bounds(prim)
+        if _float_inside(
+            pos, prim_bounds[dim][0], prim_bounds[dim][1]
+        ) and _prim_metalp(prim):
+            return Type.metal
+
+    return Type.nonmetal
 
 
 class Mesh:
     """
-    Automatic mesh generation for OpenEMS CSX structures.  Probes
-    should always be defined after mesh generation.  Additionally,
-    voltage probes should be placed on a mesh line and current probes
-    should be placed midway between two adjacent mesh lines.
+    An OpenEMS mesh object that supports automatic mesh generation.
+
+    For simplicity, as far as the mesh is concerned, we only recognize
+    2 different material types: metal and nonmetal physical meterials.
     """
 
     def __init__(
         self,
         csx: ContinuousStructure,
         lmin: float,
-        mres=1 / 20,
-        sres=1 / 10,
+        metal_res=1 / 20,
+        nonmetal_res=1 / 10,
         smooth: List[float] = [1.5, 1.5, 1.5],
-        min_lines: int = 9,
-        expand_bounds: List[float] = [20, 20, 20, 20, 20, 20],
-        simulation_bounds: List[float] = None,
+        min_lines: int = 5,
+        expand_bounds: List[List[float]] = [[5, 5], [5, 5], [5, 5]],
+        simulation_bounds: List[List[float]] = None,
     ):
         """
         :param csx: the CSXCAD structure (return value of
             CSXCAD.ContinuousStructure()).
         :param lmin: the minimum wavelength associated with the
             expected frequency.
-        :param mres: the metal resolution, specified as a factor of
-            lmin.
-        :param sres: the substrate resolution, specified as a factor
+        :param metal_res: the metal resolution, specified as a factor
             of lmin.
+        :param nonmetal_res: the substrate resolution, specified as a
+            factor of lmin.
         :param smooth: the factor by which adjacent cells are allowed
             to differ in size.  This should be a list of 3 factors,
             one for each dimension.  This is useful if, for instance,
@@ -41,33 +369,32 @@ class Mesh:
         :param min_lines: the minimum number of mesh lines for a
             primitive's dimensional length, unless the length of that
             primitive's dimension is precisely 0.
-        :param expand bounds: list of 6 elements corresponding to
-            [xmin, xmax, ymin, ymax, zmin, zmax] each element gives
-            the number of cells to add to the mesh at that boundary.
-            The cell size is determined by sres and the actual number
-            of cells added may be more (or possibly) less than what is
-            specified here due to the thirds rule and smoothing.  This
-            essentially defines the simulation box.  It's anticipated
-            that the user will only define physical structures (e.g.
-            metal layers, substrate, etc.) and will use this to set
-            the simulation box.
-        :param simulation_bounds: If set this will enforce a strict
-            total mesh size and expand_bounds will be ignored.  An
-            error will trigger if the internal CSX structures require
-            a larger mesh than the one specified here.
+        :param expand bounds: list of 3 inner lists corresponding to
+            [[xmin, xmax], [ymin, ymax], [zmin, zmax]] each element
+            gives the number of cells to add to the mesh at that
+            boundary.  The cell size is determined by nonmetal_res and
+            the actual number of cells added may be more (or possibly)
+            less than what is specified here due to the thirds rule
+            and smoothing.  This essentially defines the simulation
+            box.  It's anticipated that the user will only define
+            physical structures (e.g. metal layers, substrate, etc.)
+            and will use this to set the simulation box.
+        :param simulation_bounds: Same structure as expand_bounds, but
+            uses absolute positions.  If set this will enforce a
+            strict total mesh size and expand_bounds will be ignored.
+            An error will trigger if the internal CSX structures
+            require a larger mesh than the one specified here.
         """
         self.csx = csx
         self.lmin = lmin
-        self.mres = mres * self.lmin
-        self.sres = sres * self.lmin
+        self.metal_res = metal_res * self.lmin
+        self.nonmetal_res = nonmetal_res * self.lmin
         self.smooth = smooth
         # mesh lines are added at both boundaries, which gives us an
         # extra mesh line
-        self.min_lines = min_lines - 1
+        self.min_lines = min_lines
         self.expand_bounds = expand_bounds
         self.simulation_bounds = simulation_bounds
-        # Sort primitives by decreasing priority.
-        self.prims = self.csx.GetAllPrimitives()
         # Keep track of mesh regions already applied. This is an array
         # of 3 elements. The 1st element is a list of ranges in the
         # x-dimension that have already been meshed. The 2nd
@@ -83,32 +410,25 @@ class Mesh:
         self.metal_bounds = [[], [], []]
         # Mesh lines that cannot be moved. These are mesh lines that
         # lie directly on a zero-dimension primitive.
-        self.const_meshes = [[], [], []]
+        self.fixed_lines = [[], [], []]
         # Keep track of the smallest valid resolution value. This
         # allows us to later remove all adjacent mesh lines separated
         # by less than this value.
-        self.smallest_res = self.mres
-        # The generated mesh.
-        self.mesh = self.csx.GetGrid()
+        self.smallest_res = self.metal_res
         # Set the lines first and draw them last since the API doesn't
         # appear to expose a way to remove individual lines.
         self.mesh_lines = [[], [], []]
+        # Bounds of the entire simulation box
+        self.sim_bounds = [[], [], []]
+        # The generated mesh.
+        self.mesh = csx.GetGrid()
+
+        # set later
+        self.bounded_types = None
 
     def generate_mesh(self, enforce_thirds=True, smooth=True):
         """
-        Start by assuming only two different mesh resolutions: metal
-        and substrate/air.  This simplifies the 2/3 rule, where the
-        distance to the mesh is 1/3 on the metal side and 2/3 on the
-        other side.
-
-        Nonmetal primitives use a mesh resolution of lmin/10 and metal
-        primitives use a mesh resolution of lmin/20.  There are two
-        exceptions to this: (1) if a dimension of a meterial has
-        length 0 (e.g. a planar metal sheet) a single mesh line is
-        placed exactly on that line, and (2) a nonzero length material
-        must have a minimum of 10 mesh lines .  The 2nd exception will
-        not violate the third's rule or smoothness (that adjacent mesh
-        lines not differ in separation by more than a factor of 1.5).
+        Autogenerate a mesh given the CSX structure.
 
         :param enforce_thirds: Enforce thirds rule for metal
             boundaries.  This should always be enabled unless you want
@@ -118,85 +438,96 @@ class Mesh:
             should always be enabled unless you want to debug the mesh
             generation.
         """
-        # add metal mesh
-        for prim in self.prims:
+        prims = self.csx.GetAllPrimitives()
+        physical_prims = _physical_prims(prims)
+        self._set_fixed_lines(physical_prims)
+        bounds = _bounds_from_prims(physical_prims, self.fixed_lines)
+        bounded_types = self._bounded_types(bounds, physical_prims)
+        self.bounded_types = self._set_expanded_bounds(bounded_types)
+        self._set_metal_bounds(bounded_types)
+        size_ordered_bounded_types = _sort_bounded_types(bounded_types)
+        self._gen_mesh_for_bounded_types(size_ordered_bounded_types)
+
+        self._set_mesh_from_lines()
+
+    def _gen_mesh_for_bounded_types(
+        self, bounded_types: List[List[BoundedType]]
+    ) -> None:
+        """
+        """
+        for dim, btypes in enumerate(bounded_types):
+            for btype in btypes:
+                lower = btype.get_bounds()[0]
+                upper = btype.get_bounds()[1]
+                is_metal = btype.get_type() == Type.metal
+                line_below = self._line_below(dim, lower)
+                line_above = self._line_above(dim, upper)
+                self._gen_mesh_in_bounds(
+                    dim, lower, upper, line_below, line_above, is_metal
+                )
+                self._add_to_ranges_meshed(dim, lower, upper)
+
+    def _add_to_ranges_meshed(
+        self, dim: int, lower: float, upper: float
+    ) -> None:
+        """
+        """
+        self.ranges_meshed[dim].append([lower, upper])
+        # TODO
+        # self._consolidate_meshed_ranges(dim)
+
+    def _consolidate_meshed_ranges(self, dim):
+        """
+        Order meshed ranges and consolidate contiguous ranges.
+        """
+        self.ranges_meshed[dim] = sorted(self.ranges_meshed[dim])
+        self._range_union(dim)
+
+    def _range_union(self, dim: int, start_idx: int = 0):
+        """
+        """
+        while start_idx + 1 <= len(self.ranges_meshed[dim]) - 1:
             if (
-                self._type_str(prim) == "Metal"
-                or self._type_str(prim) == "ConductingSheet"
+                self.ranges_meshed[dim][start_idx][1]
+                >= self.ranges_meshed[dim][start_idx + 1][0]
             ):
-                bounds = self._get_prim_bounds(prim)
-                for i in range(3):
-                    self._gen_mesh_in_bounds(
-                        bounds[i][0], bounds[i][1], self.mres, i, metal=True
-                    )
-
-        # add substrate mesh
-        for prim in self.prims:
-            if self._type_str(prim) == "Material":
-                bounds = self._get_prim_bounds(prim)
-                for i in range(3):
-                    self._gen_mesh_in_bounds(
-                        bounds[i][0], bounds[i][1], self.sres, i, metal=False
-                    )
-
-        # add simulation box mesh
-        if self.simulation_bounds is not None:
-            self._check_simulation_bounds_valid()
-            for i in range(3):
-                self._gen_mesh_in_bounds(
-                    self.simulation_bounds[2 * i],
-                    self.simulation_bounds[2 * i + 1],
-                    self.sres,
-                    i,
-                    metal=False,
+                self.ranges_meshed[dim].append(
+                    [
+                        self.ranges_meshed[dim][start_idx][0],
+                        self.ranges_meshed[dim][start_idx + 1][1],
+                    ]
                 )
-        else:
-            for i in range(3):
-                self._gen_mesh_in_bounds(
-                    self.mesh_lines[i][0]
-                    - (self.sres * self.expand_bounds[2 * i]),
-                    self.mesh_lines[i][-1]
-                    + (self.sres * self.expand_bounds[2 * i + 1]),
-                    self.sres,
-                    i,
-                    metal=False,
-                )
+                del self.ranges_meshed[dim][start_idx : start_idx + 2]
+            else:
+                start_idx += 1
 
-        # remove unintended, tightly spaced meshes
-        for dim in range(3):
-            self._remove_tight_mesh_lines(dim)
-
-        # enforce thirds rule
-        if enforce_thirds:
-            for dim in range(3):
-                self._enforce_thirds(dim)
-
-        # smooth mesh
-        if smooth:
-            for dim in range(3):
-                self._smooth_mesh_lines(dim)
-
-        # set calculated mesh lines
-        self._set_mesh_from_lines()
-
-        self._emit_warning()
-
-    def add_line(self, dim: int, pos: float, smooth: bool = True) -> None:
+    def _type_above(self, dim: int, upper: float) -> Type:
         """
-        Add a mesh line.  The mesh line will be fixed.  I.e. smoothing
-        / thirds rule cannot shift this line.  This shouldn't
-        generally be necessary, and using it might be a sign that
-        you're generating the mesh incorrectly.
-
-        :param dim: Dimension to which to add the line.
-        :param pos: Position of the new mesh line.
-        :param smooth: Resmooth mesh lines after adding.
         """
-        insort_left(self.mesh_lines[dim], pos)
-        insort_left(self.const_meshes[dim], pos)
-        if smooth:
-            self._smooth_mesh_lines(dim)
-        self._set_mesh_from_lines()
+        for btype in self.bounded_types[dim]:
+            if btype.get_bounds()[0] == upper:
+                return btype.get_type()
+
+    def _type_above_meshed(self, dim: int, upper: float) -> bool:
+        """
+        """
+        for btype in self.bounded_types[dim]:
+            if btype.get_bounds()[0] == upper:
+                return self._pos_meshed(dim, btype.get_midpoint())
+
+    def _type_below(self, dim: int, lower: float) -> Type:
+        """
+        """
+        for btype in self.bounded_types[dim]:
+            if btype.get_bounds()[1] == lower:
+                return btype.get_type()
+
+    def _type_below_meshed(self, dim: int, lower: float) -> bool:
+        """
+        """
+        for btype in self.bounded_types[dim]:
+            if btype.get_bounds()[1] == lower:
+                return self._pos_meshed(dim, btype.get_midpoint())
 
     def nearest_mesh_line(self, dim: int, pos: float) -> (int, float):
         """
@@ -207,9 +538,13 @@ class Mesh:
         :param pos: desired position.
 
         :returns: (index, position) where index is the array index and
-                  position is the actual dimension value.
+                  position is the actual dimension value.  If there
+                  are no mesh lines for the dimension, return (None,
+                  None)
         """
         lines = self.mesh_lines[dim]
+        if not lines:
+            return (None, None)
         bisect_pos = bisect_left(self.mesh_lines[dim], pos)
         if bisect_pos == 0:
             return (0, lines[0])
@@ -223,114 +558,78 @@ class Mesh:
             else:
                 return (bisect_pos, upper)
 
-    def _check_simulation_bounds_valid(self) -> None:
+    def get_mesh_line(self, dim: int, index: int) -> float:
         """
-        Ensure the strict bounds are at least as large as the mesh
-        bounds formed by other structures.
-        """
-        for dim in [0, 2, 4]:
-            idx = int(dim / 2)
-            if idx >= len(self.ranges_meshed):
-                continue
-            elif 0 >= len(self.ranges_meshed[idx]):
-                continue
-            if self.simulation_bounds[dim] > self.ranges_meshed[idx][0]:
-                raise ValueError("invalid strict bounds chosen.")
-        for dim in [1, 3, 5]:
-            idx = int(dim / 2)
-            if idx >= len(self.ranges_meshed):
-                continue
-            elif 0 >= len(self.ranges_meshed[idx]):
-                continue
-            if self.simulation_bounds[dim] < self.ranges_meshed[idx][-1]:
-                raise ValueError("invalid strict bounds chosen.")
+        Get the mesh line position for a given dimension and index.
+        Raises an error if the dimension or index are invalid.
 
-    # TODO should ensure that inserted mesh lines are not at metal boundaries
-    def _enforce_thirds(self, dim):
+        :param dim: 0, 1, or 2 for x, y, z.
+        :param index: Line index.
         """
-        Replace mesh lines at metal boundaries with a mesh line
-        1/3*res inside the metal boundary and 2/3*res outside.
+        if dim > 2 or dim < 0:
+            raise ValueError("Invalid dimension provided.")
+        if not self._mesh_valid_index(dim, index):
+            raise ValueError("Mesh line index is outside valid range.")
 
-        :param dim: Dimension for which thirds rule should be
-            enforced.
+        return self.mesh_lines[dim][index]
+
+    def set_lines_equidistant(self, dim: int, lower: int, upper: int):
         """
-        for i, pos in enumerate(self.mesh_lines[dim]):
-            if (
-                pos in self.metal_bounds[dim]
-                and pos not in self.const_meshes[dim]
-            ):
-                # don't do anything at the boundary
-                if i == 0 or i == len(self.mesh_lines[dim]) - 1:
-                    continue
-                # # at lower boundary
-                # if i == 0:
-                #     del self.mesh_lines[dim][i]
-                #     insort_left(self.mesh_lines[dim], pos + (self.mres / 3))
-                #     self._enforce_thirds(dim)
-                # # at upper boundary
-                # elif i == len(self.mesh_lines[dim]) - 1:
-                #     del self.mesh_lines[dim][i]
-                #     insort_left(self.mesh_lines[dim], pos - (self.mres / 3))
-                #     self._enforce_thirds(dim)
-                else:
-                    spacing_left = pos - self.mesh_lines[dim][i - 1]
-                    spacing_right = self.mesh_lines[dim][i + 1] - pos
-                    del self.mesh_lines[dim][i]
-                    # metal-metal boundary
-                    if (
-                        abs(spacing_left - spacing_right)
-                        < self.smallest_res / 10
-                    ):
-                        new_low = pos - (spacing_left / 2)
-                        new_high = pos + (spacing_left / 2)
-                    # don't need to add tolerance for float comparison
-                    # since metal-metal boundary check already did
-                    # that
-                    elif spacing_left < spacing_right:
-                        new_low = pos - (spacing_left / 3)
-                        new_high = pos + (2 * spacing_left / 3)
-                    else:
-                        new_low = pos - (2 * spacing_right / 3)
-                        new_high = pos + (spacing_right / 3)
+        Make mesh lines equidistant from one another.  This should
+        only be used when absolutely necessary.  I.e. when setting
+        probes.  Will raise an error if lines cannot be moved.
 
-                    insort_left(self.mesh_lines[dim], new_low)
-                    insort_left(self.mesh_lines[dim], new_high)
-                    self._enforce_thirds(dim)
-
-    def _remove_tight_mesh_lines(self, dim):
+        :param dim: 0, 1, or 2 for x, y, z.
+        :param lower: Index of the first line.
+        :param upper: Index of the last line.  This line is included.
         """
-        Remove adjacent mesh lines for dimension @dim with spacing
-        less than the smallest valid resolution.
+        if upper - lower == 1:
+            raise RuntimeWarning("More than 2 lines should be specified.")
+        for i in range(lower, upper + 1):
+            if self.get_mesh_line(dim, i) in self.fixed_lines[dim]:
+                raise RuntimeError("Trying to move an unmovable line.")
 
-        :param dim: Dimension in which to remove tightly spaced
-            meshes.
+        lower_spacing = None
+        if lower != 0:
+            lower_spacing = self.get_mesh_line(
+                dim, lower
+            ) - self.get_mesh_line(dim, lower - 1)
+
+        upper_spacing = None
+        if upper != len(self.mesh_lines[dim]) - 1:
+            upper_spacing = self.get_mesh_line(
+                dim, upper + 1
+            ) - self.get_mesh_line(dim, upper)
+
+        num_spaces = upper - lower
+        lower_pos = self.get_mesh_line(dim, lower)
+        upper_pos = self.get_mesh_line(dim, upper)
+        spacing = (upper_pos - lower_pos) / num_spaces
+
+        if (
+            lower_spacing and abs(lower_spacing - spacing) > self.smooth[dim]
+        ) or (
+            upper_spacing and abs(upper_spacing - spacing) > self.smooth[dim]
+        ):
+            raise RuntimeError(
+                "Can't set equidistant lines and keep smoothness."
+            )
+
+        self._clear_mesh_in_bounds(lower_pos, upper_pos, dim)
+        new_lines = np.linspace(lower_pos, upper_pos, num_spaces + 1)
+        [self._add_mesh_line(dim, new_line) for new_line in new_lines]
+        self._set_mesh_from_lines()
+
+    def _clear_mesh_in_bounds(self, lower, upper, dim):
         """
-        last_pos = self.mesh_lines[dim][0]
-        for i, pos in enumerate(self.mesh_lines[dim]):
-            if i == 0:
-                continue
-            # we can freely delete duplicates
-            if pos == last_pos:
-                del self.mesh_lines[dim][i]
-                self._remove_tight_mesh_lines(dim)
-            # we have to check whether these are zero-dimension
-            # structures before deleting them.
-            elif (
-                pos - last_pos < self.smallest_res
-                and abs(pos - last_pos - self.smallest_res)
-                > self.smallest_res / 10
-                and (
-                    pos not in self.const_meshes[dim]
-                    or last_pos not in self.const_meshes[dim]
-                )
-            ):
-                if last_pos not in self.const_meshes[dim]:
-                    del self.mesh_lines[dim][i - 1]
-                else:
-                    del self.mesh_lines[dim][i]
-                self._remove_tight_mesh_lines(dim)
-            else:
-                last_pos = pos
+        :param lower: Lower position.
+        :param upper: Upper position.
+        :param dim: is the dimension: 0, 1, 2 for x, y, or z.
+        """
+        lower_idx, _ = self.nearest_mesh_line(dim, lower)
+        upper_idx, _ = self.nearest_mesh_line(dim, upper)
+        upper_idx += 1
+        del self.mesh_lines[dim][lower_idx:upper_idx]
 
     def _set_mesh_from_lines(self):
         """
@@ -343,348 +642,421 @@ class Mesh:
             for line in self.mesh_lines[dim]:
                 self.mesh.AddLine(dim, line)
 
-    def _get_mesh(self):
-        return self.mesh
-
-    def _type_str(self, prim):
-        return prim.GetProperty().GetTypeString()
-
-    def _get_prim_bounds(self, prim):
-        orig_bounds = prim.GetBoundBox()
-        bounds = [[None, None], [None, None], [None, None]]
-        for i in range(3):
-            upper = max(orig_bounds[0][i], orig_bounds[1][i])
-            lower = min(orig_bounds[0][i], orig_bounds[1][i])
-            bounds[i] = [lower, upper]
-        return bounds
-
-    def _mesh_res_in_bounds(self, lower, upper, dim):
+    def _line_below(self, dim: int, pos: float) -> float:
         """
-        Get the mesh resolution in the supplied boundary.
-
-        :param lower: lower boundary.
-        :param upper: upper boundary.
-        :param dim: Dimension. 0, 1, or 2 for x, y, or z.
+        Return the position of the nearest line below the provided one.
         """
-        lower_idx = bisect_left(self.mesh_lines[dim], lower)
-        upper_idx = min(
-            bisect_left(self.mesh_lines[dim], upper) + 1,
-            len(self.mesh_lines[dim]),
-        )
-        spacing = []
-        last_pos = self.mesh_lines[dim][lower_idx]
-        if lower_idx + 1 == upper_idx:
-            return (
-                self.mesh_lines[dim][upper_idx]
-                - self.mesh_lines[dim][lower_idx]
-            )
+        (idx, act_pos) = self.nearest_mesh_line(dim, pos)
+        if act_pos is None:
+            return None
+
+        if np.isclose(act_pos, pos):
+            idx -= 1
+            if self._mesh_valid_index(dim, idx):
+                act_pos = self.get_mesh_line(dim, idx)
+
+        if act_pos < pos:
+            return act_pos
+
+        idx -= 1
+        if self._mesh_valid_index(dim, idx):
+            act_pos = self.get_mesh_line(dim, idx)
+            return act_pos
+
+        return None
+
+    def _line_above(self, dim: int, pos: float) -> float:
+        """
+        Return the position of the nearest line above the provided one.
+        """
+        (idx, act_pos) = self.nearest_mesh_line(dim, pos)
+        if act_pos is None:
+            return None
+
+        if np.isclose(act_pos, pos):
+            idx += 1
+            if self._mesh_valid_index(dim, idx):
+                act_pos = self.get_mesh_line(dim, idx)
+
+        if act_pos > pos:
+            return act_pos
+
+        idx += 1
+        if self._mesh_valid_index(dim, idx):
+            act_pos = self.get_mesh_line(dim, idx)
+            return act_pos
+
+        return None
+
+    def _mesh_valid_index(self, dim: int, index: int) -> bool:
+        """
+        Indicate whether index is valid for mesh lines.
+        """
+        if index >= 0 and index < len(self.mesh_lines[dim]):
+            return True
+        return False
+
+    def _lower_spacing(
+        self, dim: int, lower: float, line_below: float, is_metal: bool
+    ) -> float:
+        """
+        Compute spacing at the lower boundary for a bounded type.
+        """
+        if is_metal:
+            lower_spacing = self.metal_res
         else:
-            for idx in range(lower_idx + 1, upper_idx):
-                spacing.append(self.mesh_lines[dim][idx] - last_pos)
-                last_pos = self.mesh_lines[dim][idx]
-            return sum(spacing) / len(spacing)
+            lower_spacing = self.nonmetal_res
 
-    def _split_bounds(self, lower, upper, dim):
-        """
-        Split bounds delimited by [lower, upper] into regions where mesh
-        already exists and regions where it doesn't yet exist.
-
-        Returns a list of 2 items. The 1st item is a list of bounds
-        where the new mesh boundaries are outside the existing
-        mesh. The 2nd item is a list of bounds where the new mesh
-        overlaps the existing mesh.
-        """
-        outin_ranges = [[], []]
-        if len(self.ranges_meshed[dim]) == 0:
-            outin_ranges[0].append([lower, upper])
-            return outin_ranges
-
-        for [lower_mesh, upper_mesh] in self.ranges_meshed[dim]:
-            if upper <= lower_mesh:
-                outin_ranges[0].append([lower, upper])
-                # since meshed ranges are sorted, we can ignore the rest.
-                return outin_ranges
-            elif lower >= upper_mesh:
-                continue
-            elif lower < lower_mesh:
-                outin_ranges[0].append([lower, lower_mesh])
-                if upper > upper_mesh:
-                    outin_ranges[1].append([lower_mesh, upper_mesh])
-                    lower = upper_mesh
-                    continue
+        if line_below and self._type_below_meshed(dim, lower):
+            factor = 1
+            if self._is_metal_bound(dim, lower) and not self._is_fixed_line(
+                dim, lower
+            ):
+                if self._type_below(dim, lower) == Type.nonmetal:
+                    factor = 3 / 2
                 else:
-                    outin_ranges[1].append([lower_mesh, upper])
-                    return outin_ranges
-            else:
-                outin_ranges[1].append([lower, min(upper, upper_mesh)])
-                if upper > upper_mesh:
-                    lower = upper_mesh
-                    continue
-                else:
-                    return outin_ranges
-        if lower < upper:
-            outin_ranges[0].append([lower, upper])
+                    factor = 3
+            spacing = factor * (lower - line_below)
+            lower_spacing = np.min([lower_spacing, spacing])
 
-        return outin_ranges
+        return lower_spacing
 
-    def _clear_mesh_in_bounds(self, lower, upper, dim):
+    def _upper_spacing(
+        self, dim: int, upper: float, line_above: float, is_metal: bool
+    ) -> float:
         """
+        Compute spacing at the upper boundary for a bounded type.
         """
-        for elt in self.mesh_lines[dim]:
-            if elt >= lower and elt <= upper:
-                self.mesh_lines[dim].remove(elt)
-
-    def _range_union(self, ranges, start_idx=0):
-        """
-        """
-        ranges = sorted(ranges)
-        if len(ranges[start_idx:]) <= 1:
-            return ranges
-
-        if ranges[start_idx][1] >= ranges[start_idx + 1][0]:
-            ranges.append([ranges[start_idx][0], ranges[start_idx + 1][1]])
-            del ranges[start_idx : start_idx + 2]
-            return self._range_union(ranges[start_idx:])
+        if is_metal:
+            upper_spacing = self.metal_res
         else:
-            return self._range_union(ranges[start_idx + 1 :])
+            upper_spacing = self.nonmetal_res
 
-    def _consolidate_meshed_ranges(self, dim):
-        """
-        Order meshed ranges and consolidate contiguous ranges.
-        """
-        self.ranges_meshed[dim] = self._range_union(self.ranges_meshed[dim])
-
-    def _update_ranges(self, lower, upper, dim):
-        """
-        :param dim: is the dimension: 0, 1, 2 for x, y, or z.
-        """
-        self.ranges_meshed[dim].append([lower, upper])
-        self._consolidate_meshed_ranges(dim)
-
-    def _smooth_mesh_lines(self, dim):
-        """
-        Ensure adjacent mesh line separations differ by less than the
-        smoothness factor.
-
-        If there's enough room between mesh lines, this function will
-        recursively add mesh lines corresponding to the largest
-        possible separation in line with self.smooth.  When there's
-        not enough room, it moves the position of existing lines to be
-        in line with smooth.
-
-        TODO should be refactored since logic in if branches are
-        basically identical, but switched.
-
-        :param dim: Dimension where mesh should be smoothed.
-        """
-        for i, pos in enumerate(self.mesh_lines[dim]):
-            if i == 0 or i == len(self.mesh_lines[dim]) - 1:
-                continue
-            left_spacing = pos - self.mesh_lines[dim][i - 1]
-            right_spacing = self.mesh_lines[dim][i + 1] - pos
-            if (
-                left_spacing > (self.smooth[dim] * right_spacing)
-                and left_spacing - (self.smooth[dim] * right_spacing)
-                > self.smallest_res / 10
+        if line_above and self._type_above_meshed(dim, upper):
+            factor = 1
+            if self._is_metal_bound(dim, upper) and not self._is_fixed_line(
+                dim, upper
             ):
-                ratio = left_spacing / right_spacing
-                if i == len(self.mesh_lines[dim]) - 2:
-                    # if there's no further mesh spacings to worry
-                    # about, this ensures we'll only move the mesh
-                    # line when that will satisfy smoothness
-                    outer_spacing = right_spacing + (
-                        1 / (self.smooth[dim] * (self.smooth[dim] + 1))
-                    )
+                if self._type_above(dim, upper) == Type.nonmetal:
+                    factor = 3 / 2
                 else:
-                    outer_spacing = self.mesh_lines[dim][i + 2] - (
-                        pos + right_spacing
-                    )
-                # if this condition satisfied, then we can move the
-                # current mesh line without violating smoothness
-                # elsewhere. To see how I got this condition, imagine
-                # spacings are given by a, b and c in order. Spacings
-                # on either side of current position are a and b. s
-                # gives smooth factor. Move pos by dx to have a and b
-                # satisfy s. It's currently above, so move by just
-                # enough to satisfy.
-                #
-                # (a-dx)/(b+dx) = s
-                #
-                # simultaneously,
-                #
-                # (b+dx)/c <= s
-                #
-                # we need the max a where this works. This occurs at
-                #
-                # (b+dx)/c = s
-                #
-                # find a. sagemath tells you that
-                #
-                # a = cs^2 + cs - b
-                if (
-                    left_spacing
-                    <= outer_spacing
-                    * self.smooth[dim]
-                    * (self.smooth[dim] + 1)
-                    - right_spacing
-                ):
-                    # adjustment to make left_spacing = smooth * right_spacing
-                    adj = (
-                        left_spacing - (self.smooth[dim] * right_spacing)
-                    ) / (self.smooth[dim] + 1)
-                    # TODO need to ensure new mesh line doesn't fall
-                    # on metal boundary or violate thirds.
-                    if pos not in self.const_meshes[dim]:
-                        del self.mesh_lines[dim][i]
-                        insort_left(self.mesh_lines[dim], pos - adj)
-                    else:
-                        insort_left(
-                            self.mesh_lines[dim], pos - (left_spacing / 2)
-                        )
-                # mesh separation is too small to add smooth *
-                # spacing, so instead add it halfway
-                elif ratio <= self.smooth[dim] * (self.smooth[dim] + 1):
-                    insort_left(self.mesh_lines[dim], pos - (left_spacing / 2))
-                else:
-                    insort_left(
-                        self.mesh_lines[dim],
-                        pos - (self.smooth[dim] * right_spacing),
-                    )
-                self._smooth_mesh_lines(dim)
-            elif (
-                right_spacing > self.smooth[dim] * left_spacing
-                and right_spacing - (self.smooth[dim] * left_spacing)
-                > self.smallest_res / 10
-            ):
-                ratio = right_spacing / left_spacing
-                if i == 1:
-                    outer_spacing = left_spacing + (
-                        1 / (self.smooth[dim] * (self.smooth[dim] + 1))
-                    )
-                else:
-                    outer_spacing = (
-                        pos - left_spacing - self.mesh_lines[dim][i - 2]
-                    )
-                if (
-                    right_spacing
-                    <= outer_spacing
-                    * self.smooth[dim]
-                    * (self.smooth[dim] + 1)
-                    - left_spacing
-                ):
-                    adj = (
-                        right_spacing - (self.smooth[dim] * left_spacing)
-                    ) / (self.smooth[dim] + 1)
-                    # TODO need to ensure new mesh line doesn't fall
-                    # on metal boundary or violate thirds.
-                    if pos not in self.const_meshes[dim]:
-                        del self.mesh_lines[dim][i]
-                        insort_left(self.mesh_lines[dim], pos + adj)
-                    else:
-                        insort_left(
-                            self.mesh_lines[dim], pos + (right_spacing / 2)
-                        )
-                elif ratio <= self.smooth[dim] * (self.smooth[dim] + 1):
-                    insort_left(
-                        self.mesh_lines[dim], pos + (right_spacing / 2)
-                    )
-                else:
-                    insort_left(
-                        self.mesh_lines[dim],
-                        pos + (self.smooth[dim] * left_spacing),
-                    )
-                self._smooth_mesh_lines(dim)
+                    factor = 3
+            spacing = factor * (line_above - upper)
+            upper_spacing = np.min([upper_spacing, spacing])
 
-    def _nearest_divisible_res(self, lower, upper, res):
-        """
-        Return the nearest resolution to @res that evenly subdivides the
-        interval [@lower, @upper].
+        return upper_spacing
 
-        This is important because it helps prevent adjacent lines from
-        bunching up and unnecessarily increasing the simulation time.
+    def _gen_mesh_in_bounds(
+        self,
+        dim: int,
+        lower: float,
+        upper: float,
+        line_below: float,
+        line_above: float,
+        is_metal: bool,
+    ) -> None:
         """
-        num_divisions = np.round((upper - lower) / res)
-        num_divisions = max(num_divisions, 1)
-        return (upper - lower) / num_divisions
+        Generate mesh lines for the given dimension and in the given
+        bounds.
 
-    def _gen_mesh_in_bounds(self, lower, upper, res, dim, metal=False):
+        :param dim: 0, 1, or 2 for x, y, z.
+        :param lower: Lower bound position.
+        :param upper: Upper bound position.
+        :param line_below: Position of the nearest mesh line below the
+            lower bound.  Set to None if none exists.
+        :param line_above: Position of the nearest mesh line above the
+            upper bound.  Set to None if none exists.
+        :param is_metal: True if the current mesh is being generated
+            for a metal structure.
         """
-        Add mesh lines within the provided dimensional boundaries.
+        # since we mesh smaller structures first, we only need to
+        # worry about the case where the spacing is small. If its
+        # large we assume we haven't meshed the adjacent structure and
+        # ignore it.
+        lower_spacing = self._lower_spacing(dim, lower, line_below, is_metal)
+        upper_spacing = self._upper_spacing(dim, upper, line_above, is_metal)
 
-        :param lower: Lower dimensional boundary.
-        :param upper: Upper dimensional boundary.
-        :param res: Desired mesh resolution within the provided
-            boundary.
-        :param dim: Dimension.  0, 1, or 2.
-        :param metal: Set to True if this boundary corresponds to a
-            metal structure.
-        """
         if lower == upper:
-            insort_left(self.mesh_lines[dim], lower)
-            insort_left(self.const_meshes[dim], lower)
+            self._add_lines_to_mesh([lower], dim)
         else:
-            [outer_bounds, inner_bounds] = self._split_bounds(
-                lower, upper, dim
+            lines = self._gen_lines_in_bounds(
+                lower, upper, lower_spacing, upper_spacing, dim
             )
-            for obound in outer_bounds:
-                if obound[1] - obound[0] < self.min_lines * res:
-                    res = (obound[1] - obound[0]) / self.min_lines
-                else:
-                    res = self._nearest_divisible_res(
-                        obound[0], obound[1], res
-                    )
-                self.smallest_res = min(self.smallest_res, res)
-                j = obound[0]
-                while j <= obound[1]:
-                    insort_left(self.mesh_lines[dim], j)
-                    j += res
-                    # depending on float rounding errors we can miss
-                    # the last mesh line
-                    if float_cmp(j, obound[1], self.smallest_res / 20):
-                        j = obound[1]
-                self._update_ranges(obound[0], obound[1], dim)
-                if metal:
-                    insort_left(self.metal_bounds[dim], obound[0])
-                    insort_left(self.metal_bounds[dim], obound[1])
-            for ibound in inner_bounds:
-                if upper - lower < self.min_lines * res:
-                    res = (upper - lower) / self.min_lines
-                else:
-                    res = self._nearest_divisible_res(
-                        ibound[0], ibound[1], res
-                    )
-                self.smallest_res = min(self.smallest_res, res)
-                # only redo the mesh if the desired one is finer than
-                # the existing one
-                cur_mesh_res = self._mesh_res_in_bounds(
-                    ibound[0], ibound[1], dim
+
+            if is_metal:
+                first_spacing = lines[1] - lines[0]
+                last_spacing = lines[-1] - lines[-2]
+                if not np.isclose(lower, self.sim_bounds[dim][0]):
+                    if self._pos_meshed(dim, lower):
+                        adj = 2 * first_spacing / 3
+                    else:
+                        adj = first_spacing / 3
+                    lower += adj
+                    # lower_spacing += adj
+                if not np.isclose(upper, self.sim_bounds[dim][1]):
+                    if self._pos_meshed(dim, upper):
+                        adj = 2 * last_spacing / 3
+                    else:
+                        adj = last_spacing / 3
+                    upper -= adj
+                    # upper_spacing += adj
+                # TODO is this good enough?
+                lines = self._gen_lines_in_bounds(
+                    lower, upper, lower_spacing, upper_spacing, dim
                 )
-                if cur_mesh_res > res and abs(cur_mesh_res - res) > res / 10:
-                    self._clear_mesh_in_bounds(ibound[0], ibound[1], dim)
-                    j = ibound[0]
-                    while j <= ibound[1]:
-                        insort_left(self.mesh_lines[dim], j)
-                        j += res
-                        if float_cmp(j, ibound[1], self.smallest_res / 20):
-                            j = ibound[1]
-                    self._update_ranges(ibound[0], ibound[1], dim)
-                if metal:
-                    insort_left(self.metal_bounds[dim], ibound[0])
-                    insort_left(self.metal_bounds[dim], ibound[1])
+            else:
+                rebuild_lines = False
+                if self._is_metal_bound(dim, lower):
+                    rebuild_lines = True
+                    first_spacing = lines[1] - lines[0]
+                    lower += 2 * first_spacing / 3
+                if self._is_metal_bound(dim, upper):
+                    rebuild_lines = True
+                    last_spacing = lines[-1] - lines[-2]
+                    upper -= 2 * last_spacing / 3
+                if rebuild_lines:
+                    lines = self._gen_lines_in_bounds(
+                        lower, upper, lower_spacing, upper_spacing, dim
+                    )
 
-    def _emit_warning(self):
+            self._add_lines_to_mesh(lines, dim)
+
+    def _is_fixed_line(self, dim: int, pos: float) -> bool:
         """
-        Display a warning for a possibly bad mesh.
         """
-        if self.smallest_res < self._max_dim() / 1000:
-            print(
-                "The generated mesh appears to be very fine. "
-                "Have you used consistent length units?"
+        return pos in self.fixed_lines[dim]
+
+    def _is_metal_bound(self, dim: int, pos: float) -> bool:
+        """
+        """
+        return pos in self.metal_bounds[dim]
+
+    def _pos_meshed(self, dim: int, pos: float) -> bool:
+        """
+        Return whether a position has already been meshed.
+        """
+        meshed_ranges = self.ranges_meshed[dim]
+        for rng in meshed_ranges:
+            if _pos_in_bounds(pos, rng[0], rng[1]):
+                return True
+
+        return False
+
+    def _gen_lines_in_bounds(
+        self,
+        lower: float,
+        upper: float,
+        lower_spacing: float,
+        upper_spacing: float,
+        dim: int,
+    ) -> np.array:
+        """
+        """
+        if np.isclose(lower_spacing, upper_spacing):
+            num_lines = int(np.ceil((upper - lower) / lower_spacing)) + 1
+            num_lines = int(np.max([num_lines, self.min_lines]))
+            return np.linspace(lower, upper, num_lines)
+
+        (factor, num_lines) = _geom_series(
+            smaller_spacing=np.min([lower_spacing, upper_spacing]),
+            larger_spacing=np.max([lower_spacing, upper_spacing]),
+            dist=upper - lower,
+            min_num=self.min_lines,
+            max_factor=self.smooth[dim],
+        )
+
+        powers = np.arange(1, num_lines, 1)
+        if lower_spacing < upper_spacing:
+            spacings = lower_spacing * np.power(factor, powers)
+            lines = np.array(lower + np.cumsum(spacings))
+            lines = np.concatenate(([lower], lines))
+        else:
+            spacings = upper_spacing * np.power(factor, powers)
+            lines = np.array(upper - np.cumsum(spacings))
+            lines = np.concatenate(([upper], lines))
+            lines = np.flip(lines)
+
+        lines[-1] = upper  # last line should be exactly equal to upper
+        return lines
+
+    def _add_lines_to_mesh(self, lines: np.array, dim: int) -> None:
+        """
+        Add an array of lines to the mesh for a given dimension.  This
+        preserves the sorted order of lines and ensures no duplicate
+        lines.
+        """
+        for line in lines:
+            self._add_mesh_line(dim, line)
+
+        self.mesh_lines[dim] = _remove_dups(
+            self.mesh_lines[dim], self.fixed_lines[dim]
+        )
+
+    def _add_mesh_line(self, dim: int, pos: float) -> None:
+        """
+        Add a line to the mesh.  Preserves sorted order of mesh lines.
+        This should only ever be called from _add_lines_to_mesh, since
+        this will not remove duplicate lines.
+
+        :param dim: 0, 1, or 2 for x, y, z.
+        :param pos: New line position.
+        """
+        insort_left(self.mesh_lines[dim], pos)
+
+    def _metal_bound_delta(
+        self,
+        lower: float,
+        upper: float,
+        lower_spacing: float,
+        upper_spacing: float,
+    ) -> List[float]:
+        """
+        The amount by which to move the bounds of a metal inside the
+        metal.
+
+        :param lower: Actual lower position of the metal.
+        :param upper: Actual upper position of the metal.
+        :param lower_spacing: Spacing to line below the metal.
+        :param upper_spacing: Spacing to line above the metal.
+
+        :returns: List of two elements corresponding to the amount to
+                  adjust the lower and upper bounds, respectively.
+        """
+
+    def _update_smallest_res(self, new_res: float) -> None:
+        """
+        Update smallest recorded resolution if new resolution is
+        smaller than current.
+        """
+        self.smallest_res = np.min([self.smallest_res, new_res])
+
+    def add_fixed_line(self, dim: int, pos: float) -> None:
+        """
+        """
+        self.fixed_lines[dim].append(pos)
+        self.fixed_lines[dim].sort()
+
+    def _set_fixed_lines(self, prims: List[CSPrimitives]) -> None:
+        """
+        """
+        for prim in prims:
+            prim_bounds = _get_prim_bounds(prim)
+            for dim in range(3):
+                if prim_bounds[dim][0] == prim_bounds[dim][1]:
+                    self.add_fixed_line(dim, prim_bounds[dim][0])
+                    # self.fixed_lines[dim].append(prim_bounds[dim][0])
+
+                # self.fixed_lines[dim].sort()
+                self.fixed_lines[dim] = _remove_dups(self.fixed_lines[dim])
+
+    def _bounded_types(
+        self, bounds: List[List[float]], prims: List[CSPrimitives]
+    ) -> List[List[BoundedType]]:
+        """
+        """
+        bounded_types = [[], [], []]
+        for dim, dim_bounds in enumerate(bounds):
+            last_bound = None
+            for bound in dim_bounds:
+                if bound in self.fixed_lines[dim]:
+                    if last_bound is not None:
+                        mid_pos = np.average([last_bound, bound])
+                        prop_type = _type_at_pos(prims, dim, mid_pos)
+                        btype = BoundedType(prop_type, last_bound, bound)
+                        bounded_types[dim].append(btype)
+                    prop_type = _type_at_pos(prims, dim, bound)
+                    btype = BoundedType(prop_type, bound, bound)
+                    bounded_types[dim].append(btype)
+                elif last_bound is not None:
+                    mid_pos = np.average([last_bound, bound])
+                    prop_type = _type_at_pos(prims, dim, mid_pos)
+                    btype = BoundedType(prop_type, last_bound, bound)
+                    bounded_types[dim].append(btype)
+
+                last_bound = bound
+
+        return bounded_types
+
+    def _set_expanded_bounds(
+        self, bounded_types: List[List[BoundedType]]
+    ) -> List[List[BoundedType]]:
+        """
+        Add bounded types based on simulation_bounds and expand_bounds
+        passed to generate_mesh.
+
+        :param bounded_types: A list of lists of BoundedType, where
+            the BoundedTypes are given in order of their lower and
+            upper bounds.
+        """
+        if self.simulation_bounds:
+            for dim, bounds in enumerate(self.simulation_bounds):
+                existing_lower = bounded_types[dim][0].get_bounds()[0]
+                existing_upper = bounded_types[dim][-1].get_bounds()[1]
+                if bounds[0] > existing_lower or bounds[1] < existing_upper:
+                    raise ValueError(
+                        "Requested simulation bounds that would ignore part "
+                        "of a physical structure."
+                    )
+                else:
+                    btype = BoundedType(
+                        Type.nonmetal, bounds[0], existing_lower
+                    )
+                    bounded_types[dim].insert(0, btype)
+                    btype = BoundedType(
+                        Type.nonmetal, existing_upper, bounds[1]
+                    )
+                    bounded_types[dim].append(btype)
+        else:
+            for dim in range(3):
+                existing_lower = bounded_types[dim][0].get_bounds()[0]
+                existing_upper = bounded_types[dim][-1].get_bounds()[1]
+                expand_lower = self.expand_bounds[dim][0]
+                expand_upper = self.expand_bounds[dim][-1]
+                if expand_lower != 0:
+                    new_low = existing_lower - (
+                        self.nonmetal_res * expand_lower
+                    )
+                    btype = BoundedType(Type.nonmetal, new_low, existing_lower)
+                    bounded_types[dim].insert(0, btype)
+                if expand_upper != 0:
+                    new_high = existing_upper + (
+                        self.nonmetal_res * expand_upper
+                    )
+                    btype = BoundedType(
+                        Type.nonmetal, existing_upper, new_high
+                    )
+                    bounded_types[dim].append(btype)
+
+        for dim in range(3):
+            self.sim_bounds[dim] = [
+                bounded_types[dim][0].get_bounds()[0],
+                bounded_types[dim][-1].get_bounds()[1],
+            ]
+
+        return bounded_types
+
+    def _set_metal_bounds(
+        self, bounded_types: List[List[BoundedType]]
+    ) -> None:
+        """
+        Set the metal boundaries based on the bounded types.
+        """
+        for dim, btypes in enumerate(bounded_types):
+            for btype in btypes:
+                if btype.get_type() == Type.metal:
+                    bounds = btype.get_bounds()
+                    self._add_metal_bound(dim, bounds[0])
+                    self._add_metal_bound(dim, bounds[1])
+
+            self.metal_bounds[dim] = _remove_dups(
+                self.metal_bounds[dim], self.fixed_lines[dim]
             )
 
-    def _max_dim(self):
+    def _add_metal_bound(self, dim: int, pos: float) -> None:
         """
-        Compute the max dimension of the mesh.
+        Add a pos to metal_bounds.  Preserves sorted line order.
+
+        :param dim: 0, 1, or 2 for x, y, z.
+        :param pos: New line position.
         """
-        dims = [lines[-1] - lines[0] for lines in self.mesh_lines]
-        return np.amax(dims)
+        insort_left(self.metal_bounds[dim], pos)

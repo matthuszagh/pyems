@@ -61,10 +61,10 @@ class PCB:
         """
         return 1 / self.sub_rho
 
-    def layer_thickness(self):
+    def layer_thickness(self, unit: float):
         """
         """
-        return self.layer_thick
+        return self.layer_thick / unit
 
     def layer_separation(self, unit: float):
         """
