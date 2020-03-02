@@ -347,7 +347,6 @@ class Mesh:
         lmin: float,
         metal_res=1 / 20,
         nonmetal_res=1 / 10,
-        ignore_smaller=1 / 800,
         smooth: List[float] = [1.5, 1.5, 1.5],
         min_lines: int = 5,
         expand_bounds: List[List[float]] = [[5, 5], [5, 5], [5, 5]],
@@ -360,12 +359,6 @@ class Mesh:
             expected frequency.
         :param metal_res: the metal resolution, specified as a factor
             of lmin.
-        :param ignore_smaller: Ignore any features smaller than this.
-            This ratio is multiplied by the minimum wavelength to get
-            the actual feature size to ignore.  Exactly zero-dimension
-            structures (i.e. conducting sheets) are not ignored.  This
-            is meant to prevent inadvertently implied tiny structures
-            from making the simulation time very long.
         :param nonmetal_res: the substrate resolution, specified as a
             factor of lmin.
         :param smooth: the factor by which adjacent cells are allowed
@@ -396,7 +389,6 @@ class Mesh:
         self.lmin = lmin
         self.metal_res = metal_res * self.lmin
         self.nonmetal_res = nonmetal_res * self.lmin
-        self.ignore_smaller = ignore_smaller * self.lmin
         self.smooth = smooth
         # mesh lines are added at both boundaries, which gives us an
         # extra mesh line
