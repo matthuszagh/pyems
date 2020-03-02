@@ -39,12 +39,11 @@ after mesh generation.
 """
 
 from abc import ABC, abstractmethod
-from bisect import bisect_left
 from typing import List
 import numpy as np
 from CSXCAD.CSXCAD import ContinuousStructure
 from CSXCAD.CSTransform import CSTransform
-from pyems.automesh import Mesh
+from pyems.automesh_beta import Mesh
 from pyems.probe import Probe
 from pyems.utilities import max_priority, wavenumber, get_unit
 from pyems.feed import Feed
@@ -94,13 +93,12 @@ class Port(ABC):
 
     def snap_to_mesh(self, mesh: Mesh) -> None:
         """
-        Position the probes and feed so that they're located correctly
+        Generate the probes and feed and ensure they're located correctly
         in relation to the mesh.  You must call this in order to get
         correct simulation behavior.
         """
-        [vprobe.snap_to_mesh(mesh) for vprobe in self.vprobes]
-        [iprobe.snap_to_mesh(mesh) for iprobe in self.iprobes]
-        [feed.snap_to_mesh(mesh) for feed in self.feeds]
+        self._set_probes(mesh=mesh)
+        self._set_feed(mesh=mesh)
 
     def frequency(self) -> np.array:
         """
@@ -120,7 +118,7 @@ class Port(ABC):
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return np.abs(self.v_inc)
+        return self.v_inc
 
     def reflected_voltage(self) -> np.array:
         """
@@ -132,7 +130,7 @@ class Port(ABC):
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return np.abs(self.v_ref)
+        return self.v_ref
 
     def impedance(self) -> np.array:
         """
@@ -143,7 +141,7 @@ class Port(ABC):
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return np.abs(self.z0)
+        return self.z0
 
     def incident_power(self) -> np.array:
         """
@@ -155,7 +153,7 @@ class Port(ABC):
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return np.abs(self.p_inc)
+        return self.p_inc
 
     def reflected_power(self) -> np.array:
         """
@@ -166,7 +164,7 @@ class Port(ABC):
         """
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
-        return np.abs(self.p_ref)
+        return self.p_ref
 
     def _calc_v_inc(self, v, i) -> None:
         """
@@ -206,7 +204,7 @@ class Port(ABC):
         :param v: Total voltage.
         :param i: Total current.
         """
-        self.i_ref = (i - (v / self.z0)) / 2
+        self.i_ref = ((v / self.z0) - i) / 2
 
     def _calc_p_inc(self) -> None:
         """
@@ -218,7 +216,7 @@ class Port(ABC):
                 "voltages / current before power."
             )
         else:
-            self.p_inc = (1 / 2) * (self.v_inc * np.conj(self.i_inc))
+            self.p_inc = (1 / 2) * np.real(self.v_inc * np.conj(self.i_inc))
 
     def _calc_p_ref(self) -> None:
         """
@@ -230,7 +228,7 @@ class Port(ABC):
                 "voltages / current before power."
             )
         else:
-            self.p_ref = (1 / 2) * (self.v_ref * np.conj(self.i_ref))
+            self.p_ref = (1 / 2) * np.real(self.v_ref * np.conj(self.i_ref))
 
     def _data_readp(self) -> bool:
         """
@@ -279,6 +277,7 @@ class PlanarPort(Port):
         excite: bool = False,
         feed_resistance: float = None,
         feed_shift: float = 0.2,
+        ref_resistance: float = None,
         measurement_shift: float = 0.5,
         rotate: float = 0.0,
     ):
@@ -329,6 +328,10 @@ class PlanarPort(Port):
             fraction of the total port length.  The final position
             will be influenced by this value but adjusted for the mesh
             used.
+        :param ref_resistance: The resistance used to calculate the
+            port voltage and current values.  If left as the default
+            value of None, the calculated characteristic impedance is
+            used to calculate these values.
         :param measurement_shift: The amount by which to shift the
             measurement probes as a fraction of the total port length.
             By default, the measurement port is placed halfway between
@@ -345,53 +348,22 @@ class PlanarPort(Port):
         self.conductivity = conductivity
         self.feed_resistance = feed_resistance
         self.feed_shift = feed_shift
+        self.ref_resistance = ref_resistance
         self.measurement_shift = measurement_shift
         self.transform_args = ["RotateAxis", "z", rotate]
         self.rotate_transform = CSTransform()
         self.rotate_transform.AddTransform(*self.transform_args)
 
         self._set_trace()
-        self._set_feed()
-        self._set_probes()
 
+    @abstractmethod
     def calc(self, sim_dir, freq) -> None:
-        """
-        Calculate the characteristic impedance, propagation constant,
-        and incident and reflected power.
+        pass
 
-        :param sim_dir: Simulation directory path.
-        :param freq: Frequency bins.  Should be the same frequency
-            bins as the ones used in the excitation.
+    def get_feed_shift(self) -> float:
         """
-        self.freq = np.array(freq)
-        [vprobe.read(sim_dir=sim_dir, freq=freq) for vprobe in self.vprobes]
-        [iprobe.read(sim_dir=sim_dir, freq=freq) for iprobe in self.iprobes]
-        v = self.vprobes[1].get_freq_data()[1]
-        i = 0.5 * (
-            self.iprobes[0].get_freq_data()[1]
-            + self.iprobes[1].get_freq_data()[1]
-        )
-        dv = (
-            self.vprobes[2].get_freq_data()[1]
-            - self.vprobes[0].get_freq_data()[1]
-        ) / (
-            self.unit * (self.vprobes[2].box[0][0] - self.vprobes[0].box[0][0])
-        )
-        di = (
-            self.iprobes[1].get_freq_data()[1]
-            - self.iprobes[0].get_freq_data()[1]
-        ) / (
-            self.unit * (self.iprobes[1].box[0][0] - self.iprobes[0].box[0][0])
-        )
-
-        self._calc_beta(v, i, dv, di)
-        self._calc_z0(v, i, dv, di)
-        self._calc_v_inc(v, i)
-        self._calc_v_ref(v, i)
-        self._calc_i_inc(v, i)
-        self._calc_i_ref(v, i)
-        self._calc_p_inc()
-        self._calc_p_ref()
+        """
+        return self.feed_shift
 
     def _calc_beta(self, v, i, dv, di) -> None:
         """
@@ -420,7 +392,10 @@ class PlanarPort(Port):
 
         ..  math:: Z0 = \sqrt{(R+jwL)/(G+jwC)}
         """
-        self.z0 = np.sqrt(v * dv / (i * di))
+        if self.ref_resistance is not None:
+            self.z0 = self.ref_resistance
+        else:
+            self.z0 = np.sqrt(v * dv / (i * di))
 
     def _set_trace(self) -> None:
         """
@@ -431,6 +406,7 @@ class PlanarPort(Port):
             conductivity=self.conductivity,
             thickness=self.thickness,
         )
+        # trace = self.csx.AddMetal("trace")
         trace_box_coords = self._get_trace_box()
         trace_box = trace.AddBox(
             priority=max_priority(),
@@ -448,7 +424,98 @@ class PlanarPort(Port):
             [self.box[1][0], self.box[1][1], self.box[1][2]],
         ]
 
-    def _set_probes(self) -> None:
+    def _get_direction(self) -> int:
+        """
+        """
+        return int(np.sign(self.box[1][0] - self.box[0][0]))
+
+    def get_box(self) -> List[List[float]]:
+        """
+        """
+        return self.box
+
+    @abstractmethod
+    def _set_probes(self, mesh: Mesh) -> None:
+        pass
+
+    @abstractmethod
+    def _set_feed(self, mesh: Mesh) -> None:
+        pass
+
+
+class MicrostripPort(PlanarPort):
+    """
+    Microstrip transmission line port.
+    """
+
+    def calc(self, sim_dir, freq) -> None:
+        """
+        Calculate the characteristic impedance, propagation constant,
+        and incident and reflected power.
+
+        :param sim_dir: Simulation directory path.
+        :param freq: Frequency bins.  Should be the same frequency
+            bins as the ones used in the excitation.
+        """
+        self.freq = np.array(freq)
+        [vprobe.read(sim_dir=sim_dir, freq=freq) for vprobe in self.vprobes]
+        [iprobe.read(sim_dir=sim_dir, freq=freq) for iprobe in self.iprobes]
+        v = self.vprobes[1].get_freq_data()[1]
+        i = (
+            0.5
+            * -self._get_direction()
+            * (
+                self.iprobes[0].get_freq_data()[1]
+                + self.iprobes[1].get_freq_data()[1]
+            )
+        )
+        dv = (
+            self.vprobes[2].get_freq_data()[1]
+            - self.vprobes[0].get_freq_data()[1]
+        ) / (
+            self.unit
+            * np.abs(self.vprobes[2].box[0][0] - self.vprobes[0].box[0][0])
+        )
+        di = (
+            -self._get_direction()
+            * (
+                self.iprobes[1].get_freq_data()[1]
+                - self.iprobes[0].get_freq_data()[1]
+            )
+            / (
+                self.unit
+                * np.abs(self.iprobes[1].box[0][0] - self.iprobes[0].box[0][0])
+            )
+        )
+
+        self._calc_beta(v, i, dv, di)
+        self._calc_z0(v, i, dv, di)
+        self._calc_v_inc(v, i)
+        self._calc_v_ref(v, i)
+        self._calc_i_inc(v, i)
+        self._calc_i_ref(v, i)
+        self._calc_p_inc()
+        self._calc_p_ref()
+
+    def _set_feed(self, mesh: Mesh) -> None:
+        """
+        Set excitation feed.
+        """
+        excite_type = None
+        if self.excite:
+            excite_type = 0
+
+        feed = Feed(
+            csx=self.csx,
+            box=self._get_feed_box(mesh),
+            excite_direction=[0, 0, 1],
+            excite_type=excite_type,
+            resistance=self.feed_resistance,
+            transform_args=self.transform_args,
+        )
+        self.feeds.append(feed)
+
+    def _set_probes(self, mesh: Mesh) -> None:
         """
         Set measurement probes.
         """
@@ -458,13 +525,20 @@ class PlanarPort(Port):
         trace_ymid = (trace_ylow + trace_yhigh) / 2
         gnd_z = self.box[0][2]
         trace_z = trace_box[1][2]
+
+        trace_xlow = trace_box[0][0]
+        trace_xhigh = trace_box[1][0]
+        x_index, vxmid = mesh.nearest_mesh_line(
+            0,
+            trace_box[0][0]
+            + (self.measurement_shift * (trace_xhigh - trace_xlow)),
+        )
+        mesh.set_lines_equidistant(0, x_index - 1, x_index + 1)
+
         vxpos = [
-            trace_box[0][0] + (shift * (trace_box[1][0] - trace_box[0][0]))
-            for shift in [
-                self.measurement_shift - 0.1,
-                self.measurement_shift,
-                self.measurement_shift + 0.1,
-            ]
+            mesh.get_mesh_line(0, x_index - self._get_direction()),
+            mesh.get_mesh_line(0, x_index),
+            mesh.get_mesh_line(0, x_index + self._get_direction()),
         ]
         ixpos = [
             (vxpos[0] + vxpos[1]) / 2,
@@ -493,30 +567,6 @@ class PlanarPort(Port):
             for xpos in ixpos
         ]
 
-    @abstractmethod
-    def _set_feed(self) -> None:
-        pass
-
-
-class MicrostripPort(PlanarPort):
-    """
-    Microstrip transmission line port.
-    """
-
-    def _set_feed(self) -> None:
-        """
-        Set excitation feed.
-        """
-        if self.excite:
-            feed = Feed(
-                csx=self.csx,
-                box=self._get_feed_box(),
-                excite_direction=[0, 0, 1],
-                resistance=self.feed_resistance,
-                transform_args=self.transform_args,
-            )
-            self.feeds.append(feed)
-
     def _get_excite_dir(self) -> List[int]:
         """
         """
@@ -525,12 +575,14 @@ class MicrostripPort(PlanarPort):
         else:
             return [0, 0, -1]
 
-    def _get_feed_box(self) -> List[List[float]]:
+    def _get_feed_box(self, mesh: Mesh) -> List[List[float]]:
         """
         Get the pre-transformed excitation feed box.
         """
-        xpos = self.box[0][0] + (
-            self.feed_shift * (self.box[1][0] - self.box[0][0])
+        _, xpos = mesh.nearest_mesh_line(
+            0,
+            self.box[0][0]
+            + (self.feed_shift * (self.box[1][0] - self.box[0][0])),
         )
         return [
             [xpos, self.box[0][1], self.box[0][2]],
@@ -553,12 +605,14 @@ class CPWPort(PlanarPort):
         excite: bool = False,
         feed_resistance: float = None,
         feed_shift: float = 0.2,
+        ref_resistance: float = None,
         measurement_shift: float = 0.5,
         rotate: float = 0.0,
     ):
         """
         :param gap: Gap between adjacent ground planes and trace (in m).
         """
+        self.gap = gap
         super().__init__(
             csx,
             bounding_box,
@@ -567,45 +621,192 @@ class CPWPort(PlanarPort):
             excite,
             feed_resistance,
             feed_shift,
+            ref_resistance,
             measurement_shift,
             rotate,
         )
-        self.gap = gap
 
-    def _set_feed(self) -> None:
+    def calc(self, sim_dir, freq) -> None:
+        """
+        Calculate the characteristic impedance, propagation constant,
+        and incident and reflected power.
+
+        :param sim_dir: Simulation directory path.
+        :param freq: Frequency bins.  Should be the same frequency
+            bins as the ones used in the excitation.
+        """
+        self.freq = np.array(freq)
+        [vprobe.read(sim_dir=sim_dir, freq=freq) for vprobe in self.vprobes]
+        [iprobe.read(sim_dir=sim_dir, freq=freq) for iprobe in self.iprobes]
+        v0 = 0.5 * (
+            self.vprobes[0].get_freq_data()[1]
+            + self.vprobes[1].get_freq_data()[1]
+        )
+        v1 = 0.5 * (
+            self.vprobes[2].get_freq_data()[1]
+            + self.vprobes[3].get_freq_data()[1]
+        )
+        v2 = 0.5 * (
+            self.vprobes[4].get_freq_data()[1]
+            + self.vprobes[5].get_freq_data()[1]
+        )
+        v = v1
+
+        i = 0.5 * (
+            self.iprobes[0].get_freq_data()[1]
+            + self.iprobes[1].get_freq_data()[1]
+        )
+        dv = (v2 - v0) / (
+            self.unit * (self.vprobes[2].box[0][0] - self.vprobes[0].box[0][0])
+        )
+        di = (
+            self.iprobes[1].get_freq_data()[1]
+            - self.iprobes[0].get_freq_data()[1]
+        ) / (
+            self.unit * (self.iprobes[1].box[0][0] - self.iprobes[0].box[0][0])
+        )
+
+        self._calc_beta(v, i, dv, di)
+        self._calc_z0(v, i, dv, di)
+        self._calc_v_inc(v, i)
+        self._calc_v_ref(v, i)
+        self._calc_i_inc(v, i)
+        self._calc_i_ref(v, i)
+        self._calc_p_inc()
+        self._calc_p_ref()
+
+    def _set_feed(self, mesh: Mesh) -> None:
         """
         Set excitation feed.
         """
+        excite_type = None
         if self.excite:
-            if self.feed_resistance:
-                self.feed_resistance *= 2  # use 2 parallel feeds
+            excite_type = 0
 
+        # when the user specifies a feed resistance, this means they
+        # want the cpw port terminated with that resistance. To get
+        # the best termination, use a single feed extending the trace
+        # line. The user must provide a ground plane 1 gap width
+        # behind the trace end.
+        if self.feed_resistance:
+            trace_box = self._get_trace_box()
+            feed = Feed(
+                csx=self.csx,
+                box=[
+                    [
+                        trace_box[0][0] - (self._get_direction() * self.gap),
+                        trace_box[0][1],
+                        trace_box[0][2],
+                    ],
+                    [trace_box[0][0], trace_box[1][1], trace_box[1][2]],
+                ],
+                excite_direction=[self._get_direction(), 0, 0],
+                excite_type=excite_type,
+                resistance=self.feed_resistance,
+                transform_args=self.transform_args,
+            )
+            self.feeds.append(feed)
+
+        else:
             for box, excite_dir in zip(
-                self._get_feed_boxes(), [[0, 1, 0], [0, -1, 0]]
+                self._get_feed_boxes(mesh), [[0, 1, 0], [0, -1, 0]]
             ):
                 feed = Feed(
-                    self.csx,
-                    box,
-                    excite_dir,
-                    self.feed_resistance,
-                    self.transform_args,
+                    csx=self.csx,
+                    box=box,
+                    excite_direction=excite_dir,
+                    excite_type=excite_type,
+                    resistance=self.feed_resistance,
+                    transform_args=self.transform_args,
                 )
                 self.feeds.append(feed)
 
-    def _get_feed_boxes(self) -> None:
+    def _get_feed_boxes(self, mesh: Mesh) -> None:
         """
         """
-        feed_xpos = self.box[0][0] + (
-            self.feed_shift * (self.box[1][0] - self.box[0][0])
+        _, xpos = mesh.nearest_mesh_line(
+            0,
+            self.box[0][0]
+            + (self.feed_shift * (self.box[1][0] - self.box[0][0])),
         )
         feed_boxes = [
-            [[feed_xpos, ystart, 0], [feed_xpos, yend, 0]]
+            [[xpos, ystart, 0], [xpos, yend, 0]]
             for ystart, yend in zip(
-                [self.box[0][1] - self.gap, self.box[1][1] + self.gap],
+                [
+                    self.box[0][1] - (self._get_direction() * self.gap),
+                    self.box[1][1] + (self._get_direction() * self.gap),
+                ],
                 [self.box[0][1], self.box[1][1]],
             )
         ]
         return feed_boxes
+
+    def _set_probes(self, mesh: Mesh) -> None:
+        """
+        Set measurement probes.
+        """
+        trace_box = self._get_trace_box()
+        trace_ylow = trace_box[0][1]
+        trace_yhigh = trace_box[1][1]
+        trace_z = trace_box[1][2]
+
+        trace_xlow = trace_box[0][0]
+        trace_xhigh = trace_box[1][0]
+        x_index, vxmid = mesh.nearest_mesh_line(
+            0,
+            trace_box[0][0]
+            + (self.measurement_shift * (trace_xhigh - trace_xlow)),
+        )
+        mesh.set_lines_equidistant(0, x_index - 1, x_index + 1)
+
+        vxpos = [
+            mesh.get_mesh_line(0, x_index - self._get_direction()),
+            mesh.get_mesh_line(0, x_index),
+            mesh.get_mesh_line(0, x_index + self._get_direction()),
+        ]
+        ixpos = [
+            (vxpos[0] + vxpos[1]) / 2,
+            (vxpos[1] + vxpos[2]) / 2,
+        ]
+
+        self.vprobes = []
+        for xpos in vxpos:
+            self.vprobes.append(
+                Probe(
+                    csx=self.csx,
+                    box=[
+                        [xpos, trace_ylow - self.gap, trace_z],
+                        [xpos, trace_ylow, trace_z],
+                    ],
+                    p_type=0,
+                    transform_args=self.transform_args,
+                )
+            )
+            self.vprobes.append(
+                Probe(
+                    csx=self.csx,
+                    box=[
+                        [xpos, trace_yhigh, trace_z],
+                        [xpos, trace_yhigh + self.gap, trace_z],
+                    ],
+                    p_type=0,
+                    transform_args=self.transform_args,
+                )
+            )
+
+        self.iprobes = [
+            Probe(
+                csx=self.csx,
+                box=[
+                    [xpos, trace_ylow, trace_z],
+                    [xpos, trace_yhigh, trace_z],
+                ],
+                p_type=1,
+                norm_dir=0,
+                transform_args=self.transform_args,
+            )
+            for xpos in ixpos
+        ]
 
 
 class RectWaveguidePort(Port):
@@ -765,9 +966,11 @@ class RectWaveguidePort(Port):
         Compute whether the port faces in the positive or negative
         direction of propagation_axis.
         """
-        self.direction = np.sign(
-            self.box[1][self.propagation_axis]
-            - self.box[0][self.propagation_axis]
+        self.direction = int(
+            np.sign(
+                self.box[1][self.propagation_axis]
+                - self.box[0][self.propagation_axis]
+            )
         )
 
     def _set_func(self) -> None:
@@ -836,7 +1039,7 @@ class RectWaveguidePort(Port):
         """
         self.z0 = k * Z0 / self.beta
 
-    def _set_probes(self) -> None:
+    def _set_probes(self, mesh: Mesh) -> None:
         """
         Set measurement probes.
         """
