@@ -1,7 +1,6 @@
 from typing import List
 from enum import Enum
 from bisect import bisect_left, insort_left
-import subprocess
 import numpy as np
 import scipy.optimize
 from CSXCAD.CSXCAD import ContinuousStructure
