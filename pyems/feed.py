@@ -16,7 +16,7 @@ class Feed:
         csx: ContinuousStructure,
         box: List[List[float]],
         excite_direction: List[float],
-        excite_type: int = 0,
+        excite_type: int = None,
         resistance: float = None,
         transform_args=None,
         weight_func=None,
@@ -30,7 +30,9 @@ class Feed:
             propagates.  Provide a list of 3 values corresponding to
             x, y, and z.  For instance, [0, 0, 1] would propagate in
             the +z direction.
-        :param excite_type: Excitation type. See `SetExcitation`.
+        :param excite_type: Excitation type.  See `SetExcitation`.
+            Leave as the default None, if you don't want an
+            excitation.
         :param resistance: Feed resistance.  If left as None, which is
             the default, the feed will have infinite impedance.  In
             this case make sure to terminate the structure in PMLs.
@@ -56,21 +58,22 @@ class Feed:
         """
         Set excitation feed.
         """
-        excitation = self.csx.AddExcitation(
-            name="excite_" + str(self._get_inc_ctr()),
-            exc_type=self.excite_type,
-            exc_val=self.excite_direction,
-            delay=self.delay,
-        )
-        if self.weight_func:
-            excitation.SetWeightFunction(self.weight_func)
+        if self.excite_type is not None:
+            excitation = self.csx.AddExcitation(
+                name="excite_" + str(self._get_inc_ctr()),
+                exc_type=self.excite_type,
+                exc_val=self.excite_direction,
+                delay=self.delay,
+            )
+            if self.weight_func:
+                excitation.SetWeightFunction(self.weight_func)
 
-        self.excitation_box = excitation.AddBox(
-            start=self.box[0], stop=self.box[1], priority=max_priority()
-        )
+            self.excitation_box = excitation.AddBox(
+                start=self.box[0], stop=self.box[1], priority=max_priority()
+            )
 
-        if self.transform_args is not None:
-            self.excitation_box.AddTransform(*self.transform_args)
+            if self.transform_args is not None:
+                self.excitation_box.AddTransform(*self.transform_args)
 
         if self.resistance:
             res = self.csx.AddLumpedElement(
