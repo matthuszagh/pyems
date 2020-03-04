@@ -424,10 +424,17 @@ class PlanarPort(Port):
             [self.box[1][0], self.box[1][1], self.box[1][2]],
         ]
 
-    def _get_direction(self) -> int:
+    def _get_propagation_direction(self) -> int:
         """
+        Get the direction of the signal propagation in the x-axis.
         """
         return int(np.sign(self.box[1][0] - self.box[0][0]))
+
+    def _get_excitation_direction(self) -> int:
+        """
+        Get the direction of the signal excitation in the z-axis.
+        """
+        return int(np.sign(self.box[1][2] - self.box[0][2]))
 
     def get_box(self) -> List[List[float]]:
         """
@@ -463,7 +470,7 @@ class MicrostripPort(PlanarPort):
         v = self.vprobes[1].get_freq_data()[1]
         i = (
             0.5
-            * -self._get_direction()
+            # * -self._get_propagation_direction()
             * (
                 self.iprobes[0].get_freq_data()[1]
                 + self.iprobes[1].get_freq_data()[1]
@@ -477,8 +484,8 @@ class MicrostripPort(PlanarPort):
             * np.abs(self.vprobes[2].box[0][0] - self.vprobes[0].box[0][0])
         )
         di = (
-            -self._get_direction()
-            * (
+            # -self._get_propagation_direction()*
+            (
                 self.iprobes[1].get_freq_data()[1]
                 - self.iprobes[0].get_freq_data()[1]
             )
@@ -536,9 +543,9 @@ class MicrostripPort(PlanarPort):
         mesh.set_lines_equidistant(0, x_index - 1, x_index + 1)
 
         vxpos = [
-            mesh.get_mesh_line(0, x_index - self._get_direction()),
+            mesh.get_mesh_line(0, x_index - self._get_propagation_direction()),
             mesh.get_mesh_line(0, x_index),
-            mesh.get_mesh_line(0, x_index + self._get_direction()),
+            mesh.get_mesh_line(0, x_index + self._get_propagation_direction()),
         ]
         ixpos = [
             (vxpos[0] + vxpos[1]) / 2,
@@ -549,6 +556,7 @@ class MicrostripPort(PlanarPort):
                 csx=self.csx,
                 box=[[xpos, trace_ymid, gnd_z], [xpos, trace_ymid, trace_z]],
                 p_type=0,
+                weight=self._get_excitation_direction(),
                 transform_args=self.transform_args,
             )
             for xpos in vxpos
@@ -562,18 +570,11 @@ class MicrostripPort(PlanarPort):
                 ],
                 p_type=1,
                 norm_dir=0,
+                weight=-self._get_propagation_direction(),  # TODO ??
                 transform_args=self.transform_args,
             )
             for xpos in ixpos
         ]
-
-    def _get_excite_dir(self) -> List[int]:
-        """
-        """
-        if self.box[0][2] < self.box[1][2]:
-            return [0, 0, 1]
-        else:
-            return [0, 0, -1]
 
     def _get_feed_box(self, mesh: Mesh) -> List[List[float]]:
         """
@@ -652,27 +653,18 @@ class CPWPort(PlanarPort):
         )
         v = v1
 
-        i = (
-            0.5
-            * -self._get_direction()
-            * (
-                self.iprobes[0].get_freq_data()[1]
-                + self.iprobes[1].get_freq_data()[1]
-            )
+        i = 0.5 * (
+            self.iprobes[0].get_freq_data()[1]
+            + self.iprobes[1].get_freq_data()[1]
         )
         dv = (v2 - v0) / (
             self.unit * (self.vprobes[2].box[0][0] - self.vprobes[0].box[0][0])
         )
         di = (
-            -self._get_direction()
-            * (
-                self.iprobes[1].get_freq_data()[1]
-                - self.iprobes[0].get_freq_data()[1]
-            )
-            / (
-                self.unit
-                * (self.iprobes[1].box[0][0] - self.iprobes[0].box[0][0])
-            )
+            self.iprobes[1].get_freq_data()[1]
+            - self.iprobes[0].get_freq_data()[1]
+        ) / (
+            self.unit * (self.iprobes[1].box[0][0] - self.iprobes[0].box[0][0])
         )
 
         self._calc_beta(v, i, dv, di)
@@ -703,13 +695,14 @@ class CPWPort(PlanarPort):
                 csx=self.csx,
                 box=[
                     [
-                        trace_box[0][0] - (self._get_direction() * self.gap),
+                        trace_box[0][0]
+                        - (self._get_propagation_direction() * self.gap),
                         trace_box[0][1],
                         trace_box[0][2],
                     ],
                     [trace_box[0][0], trace_box[1][1], trace_box[1][2]],
                 ],
-                excite_direction=[self._get_direction(), 0, 0],
+                excite_direction=[self._get_propagation_direction(), 0, 0],
                 excite_type=excite_type,
                 resistance=self.feed_resistance,
                 transform_args=self.transform_args,
@@ -742,8 +735,10 @@ class CPWPort(PlanarPort):
             [[xpos, ystart, 0], [xpos, yend, 0]]
             for ystart, yend in zip(
                 [
-                    self.box[0][1] - (self._get_direction() * self.gap),
-                    self.box[1][1] + (self._get_direction() * self.gap),
+                    self.box[0][1]
+                    - (self._get_propagation_direction() * self.gap),
+                    self.box[1][1]
+                    + (self._get_propagation_direction() * self.gap),
                 ],
                 [self.box[0][1], self.box[1][1]],
             )
@@ -769,9 +764,9 @@ class CPWPort(PlanarPort):
         mesh.set_lines_equidistant(0, x_index - 1, x_index + 1)
 
         vxpos = [
-            mesh.get_mesh_line(0, x_index - self._get_direction()),
+            mesh.get_mesh_line(0, x_index - self._get_propagation_direction()),
             mesh.get_mesh_line(0, x_index),
-            mesh.get_mesh_line(0, x_index + self._get_direction()),
+            mesh.get_mesh_line(0, x_index + self._get_propagation_direction()),
         ]
         ixpos = [
             (vxpos[0] + vxpos[1]) / 2,
@@ -780,6 +775,7 @@ class CPWPort(PlanarPort):
 
         self.vprobes = []
         for xpos in vxpos:
+            # TODO ensure probe weights set correctly
             self.vprobes.append(
                 Probe(
                     csx=self.csx,
@@ -789,6 +785,7 @@ class CPWPort(PlanarPort):
                     ],
                     p_type=0,
                     transform_args=self.transform_args,
+                    weight=self._get_excitation_direction(),
                 )
             )
             self.vprobes.append(
@@ -800,6 +797,7 @@ class CPWPort(PlanarPort):
                     ],
                     p_type=0,
                     transform_args=self.transform_args,
+                    weight=-self._get_excitation_direction(),
                 )
             )
 
@@ -813,6 +811,7 @@ class CPWPort(PlanarPort):
                 p_type=1,
                 norm_dir=0,
                 transform_args=self.transform_args,
+                weight=-self._get_propagation_direction(),
             )
             for xpos in ixpos
         ]
