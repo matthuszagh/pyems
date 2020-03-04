@@ -865,8 +865,6 @@ class RectWaveguidePort(Port):
         self._set_direction()
         self._parse_mode_name()
         self._set_func()
-        self._set_feed()
-        self._set_probes()
 
     def calc(self, sim_dir, freq):
         """
@@ -1052,9 +1050,14 @@ class RectWaveguidePort(Port):
         """
         Set measurement probes.
         """
+        _, prop_pos = mesh.nearest_mesh_line(
+            self.propagation_axis, self.box[1][self.propagation_axis]
+        )
+
         probe_start = np.array(self.box[0])
         probe_stop = np.array(self.box[1])
-        probe_start[self.propagation_axis] = probe_stop[self.propagation_axis]
+        probe_start[self.propagation_axis] = prop_pos
+        probe_stop[self.propagation_axis] = prop_pos
 
         self.vprobes = [
             Probe(
@@ -1077,16 +1080,20 @@ class RectWaveguidePort(Port):
             )
         ]
 
-    def _set_feed(self) -> None:
+    def _set_feed(self, mesh: Mesh) -> None:
         """
         Set excitation feed.
         """
         if self.excite:
+            _, prop_pos = mesh.nearest_mesh_line(
+                self.propagation_axis, self.box[0][self.propagation_axis]
+            )
+
             feed_start = np.array(self.box[0])
             feed_stop = np.array(self.box[1])
-            feed_stop[self.propagation_axis] = feed_start[
-                self.propagation_axis
-            ]
+            feed_stop[self.propagation_axis] = prop_pos
+            feed_start[self.propagation_axis] = prop_pos
+
             feed_vec = np.ones(3)
             feed_vec[self.propagation_axis] = 0
             weight_func = [str(x) for x in self.e_func]
