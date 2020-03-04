@@ -348,7 +348,7 @@ class Mesh:
         nonmetal_res=1 / 10,
         smooth: List[float] = [1.5, 1.5, 1.5],
         min_lines: int = 5,
-        expand_bounds: List[List[float]] = [[5, 5], [5, 5], [5, 5]],
+        expand_bounds: List[List[float]] = [[8, 8], [8, 8], [8, 8]],
         simulation_bounds: List[List[float]] = None,
     ):
         """
