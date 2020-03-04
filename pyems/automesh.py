@@ -32,22 +32,22 @@ class BoundedType:
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
 
-    def get_type(self):
+    def get_type(self) -> Type:
         """
         """
         return self.prop_type
 
-    def get_bounds(self):
+    def get_bounds(self) -> List[float]:
         """
         """
         return [self.lower_bound, self.upper_bound]
 
-    def get_midpoint(self):
+    def get_midpoint(self) -> float:
         """
         """
         return np.average([self.lower_bound, self.upper_bound])
 
-    def size(self):
+    def size(self) -> float:
         """
         """
         return self.upper_bound - self.lower_bound
