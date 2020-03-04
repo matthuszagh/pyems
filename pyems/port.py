@@ -277,7 +277,7 @@ class PlanarPort(Port):
         excite: bool = False,
         feed_resistance: float = None,
         feed_shift: float = 0.2,
-        ref_resistance: float = None,
+        ref_impedance: float = None,
         measurement_shift: float = 0.5,
         rotate: float = 0.0,
     ):
@@ -328,7 +328,7 @@ class PlanarPort(Port):
             fraction of the total port length.  The final position
             will be influenced by this value but adjusted for the mesh
             used.
-        :param ref_resistance: The resistance used to calculate the
+        :param ref_impedance: The resistance used to calculate the
             port voltage and current values.  If left as the default
             value of None, the calculated characteristic impedance is
             used to calculate these values.
@@ -348,7 +348,7 @@ class PlanarPort(Port):
         self.conductivity = conductivity
         self.feed_resistance = feed_resistance
         self.feed_shift = feed_shift
-        self.ref_resistance = ref_resistance
+        self.ref_impedance = ref_impedance
         self.measurement_shift = measurement_shift
         self.transform_args = ["RotateAxis", "z", rotate]
         self.rotate_transform = CSTransform()
@@ -392,8 +392,8 @@ class PlanarPort(Port):
 
         ..  math:: Z0 = \sqrt{(R+jwL)/(G+jwC)}
         """
-        if self.ref_resistance is not None:
-            self.z0 = self.ref_resistance
+        if self.ref_impedance is not None:
+            self.z0 = self.ref_impedance
         else:
             self.z0 = np.sqrt(v * dv / (i * di))
 
@@ -605,7 +605,7 @@ class CPWPort(PlanarPort):
         excite: bool = False,
         feed_resistance: float = None,
         feed_shift: float = 0.2,
-        ref_resistance: float = None,
+        ref_impedance: float = None,
         measurement_shift: float = 0.5,
         rotate: float = 0.0,
     ):
@@ -621,7 +621,7 @@ class CPWPort(PlanarPort):
             excite,
             feed_resistance,
             feed_shift,
-            ref_resistance,
+            ref_impedance,
             measurement_shift,
             rotate,
         )
