@@ -8,6 +8,7 @@ let
     pathos
     pyems
     matplotlib
+    pytest
   ]);
 in pkgs.mkShell rec {
   buildInputs = with pkgs; [

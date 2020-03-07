@@ -11,6 +11,25 @@ from pyems.field_dump import FieldDump
 from pyems.utilities import wavelength, get_unit
 
 
+def init_simulation(
+    unit: float = 1, end_criteria: float = 1e-5
+) -> (ContinuousStructure, openEMS):
+    """
+    Initialize a simulation and set the default distance dimension.
+
+    :param unit: Length dimension unit to use for all simulation
+        distances.  Defaults to 1, which is meters.  For instance,
+        1e-3 would be mm.
+    :param end_criteria: FDTD termination energy.
+
+    :returns: CSXCAD and openEMS objects
+    """
+    csx = ContinuousStructure()
+    csx.GetGrid().SetDeltaUnit(unit)
+    fdtd = openEMS(EndCriteria=end_criteria)
+    return (csx, fdtd)
+
+
 class Simulation:
     """
     OpenEMS simulation.  This is the main entry-point for
@@ -68,18 +87,19 @@ class Simulation:
         """
         return self.field_dumps
 
-    def finalize_structure(
-        self, expand_bounds: List[float], simulation_bounds: List[float] = None
-    ) -> None:
-        """
-        """
-        self.network.generate_mesh(
-            min_wavelength=wavelength(
-                self.center_freq + self.half_bandwidth, get_unit(self.csx)
-            ),
-            expand_bounds=expand_bounds,
-            simulation_bounds=simulation_bounds,
-        )
+    # # TODO simulation shouldn't make call to generate mesh
+    # def finalize_structure(
+    #     self, expand_bounds: List[float], simulation_bounds: List[float] = None
+    # ) -> None:
+    #     """
+    #     """
+    #     self.network.generate_mesh(
+    #         min_wavelength=wavelength(
+    #             self.center_freq + self.half_bandwidth, get_unit(self.csx)
+    #         ),
+    #         expand_bounds=expand_bounds,
+    #         simulation_bounds=simulation_bounds,
+    #     )
 
     def simulate(self, num_freq_bins: int = 501, nf2ff: bool = False) -> None:
         """
@@ -166,10 +186,6 @@ class Simulation:
                 "You must set nf2ff to True in simulate() in order to perform "
                 "this calculation."
             )
-        # print(
-        #     "Running near-field to far-field transformation. "
-        #     "This may take a while."
-        # )
         return self.nf2ff.CalcNF2FF(
             sim_path=self.sim_dir,
             freq=self.center_freq,

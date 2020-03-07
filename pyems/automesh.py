@@ -1,10 +1,12 @@
-from typing import List
+from typing import List, Tuple
 from enum import Enum
 from bisect import bisect_left, insort_left
 import numpy as np
 import scipy.optimize
-from CSXCAD.CSXCAD import ContinuousStructure
 from CSXCAD.CSPrimitives import CSPrimitives
+from pyems.simulation_beta import Simulation
+from pyems.utilities import wavelength
+from pyems.coordinate import Box3, Coordinate3
 
 
 class Type(Enum):
@@ -72,7 +74,7 @@ def _prim_materialp(prim: CSPrimitives) -> bool:
     Return True if CSXCAD primitive is a nonmetal, physical property.
     """
     type_str = prim.GetProperty().GetTypeString()
-    if type_str == "Materal":
+    if type_str == "Material":
         return True
     return False
 
@@ -82,6 +84,9 @@ def _get_prim_bounds(prim: CSPrimitives):
     Get the physical boundary of a CSXCAD primitive.
     """
     orig_bounds = prim.GetBoundBox()
+    tr = prim.GetTransform()
+    orig_bounds[0] = tr.Transform(orig_bounds[0])
+    orig_bounds[1] = tr.Transform(orig_bounds[1])
     bounds = [[None, None], [None, None], [None, None]]
     for i in range(3):
         upper = max(orig_bounds[0][i], orig_bounds[1][i])
@@ -180,9 +185,7 @@ def _float_inside(val: float, lower: float, upper: float) -> bool:
     return False
 
 
-def _factor_for_num(
-    num: int, smaller_spacing: float, larger_spacing: float, dist: float
-) -> float:
+def _factor_for_num(num: int, smaller_spacing: float, dist: float) -> float:
     """
     Compute the geometric series factor such that the geometric series
     sum is equal to a provided distance.
@@ -220,7 +223,7 @@ def _geom_dist_zero(
 
 
 def _num_for_factor(
-    factor: float, smaller_spacing: float, larger_spacing: float, dist: float
+    factor: float, smaller_spacing: float, dist: float
 ) -> (float, int):
     """
     Find the closest number for a given factor and return that number
@@ -233,7 +236,7 @@ def _num_for_factor(
             + 1
         )
     )
-    factor = _factor_for_num(num, smaller_spacing, larger_spacing, dist)
+    factor = _factor_for_num(num, smaller_spacing, dist)
     return (factor, num)
 
 
@@ -253,24 +256,19 @@ def _geom_series(
 
     if nlower == nupper:
         num = nlower
-        factor = _factor_for_num(num, smaller_spacing, larger_spacing, dist)
+        factor = _factor_for_num(num, smaller_spacing, dist)
         while factor >= _factor_ubound(
             num, larger_spacing / smaller_spacing, max_factor
         ):
             num += 1
-            factor = _factor_for_num(
-                num, smaller_spacing, larger_spacing, dist
-            )
+            factor = _factor_for_num(num, smaller_spacing, dist)
 
         return (factor, num)
 
     # nlower >= min_num and nlower < nupper
     nums = np.arange(nlower, nupper + 1, 1)
     factors = np.array(
-        [
-            _factor_for_num(num, smaller_spacing, larger_spacing, dist)
-            for num in nums
-        ]
+        [_factor_for_num(num, smaller_spacing, dist) for num in nums]
     )
     factors = np.flip(factors)  # sort factors in ascending order
     nums = np.flip(nums)  # keep num and factor indices matched
@@ -282,14 +280,10 @@ def _geom_series(
     index = bisect_left(factors, max_factor) - 1
     if index < 0:  # all factors too large
         factor = max_factor
-        (factor, num) = _num_for_factor(
-            factor, smaller_spacing, larger_spacing, dist
-        )
+        (factor, num) = _num_for_factor(factor, smaller_spacing, dist)
         while factor >= max_factor:
             num += 1
-            factor = _factor_for_num(
-                num, smaller_spacing, larger_spacing, dist
-            )
+            factor = _factor_for_num(num, smaller_spacing, dist)
         return (factor, num)
 
     factor = factors[index]
@@ -342,20 +336,18 @@ class Mesh:
 
     def __init__(
         self,
-        csx: ContinuousStructure,
-        lmin: float,
+        sim: Simulation,
         metal_res=1 / 20,
         nonmetal_res=1 / 10,
-        smooth: List[float] = [1.5, 1.5, 1.5],
+        smooth: Tuple[float, float, float] = (1.5, 1.5, 1.5),
         min_lines: int = 5,
-        expand_bounds: List[List[float]] = [[8, 8], [8, 8], [8, 8]],
+        expand_bounds: Tuple[
+            Tuple[int, int], Tuple[int, int], Tuple[int, int]
+        ] = ((8, 8), (8, 8), (8, 8)),
         simulation_bounds: List[List[float]] = None,
     ):
         """
-        :param csx: the CSXCAD structure (return value of
-            CSXCAD.ContinuousStructure()).
-        :param lmin: the minimum wavelength associated with the
-            expected frequency.
+        :param sim: Simulation object to which mesh should be added.
         :param metal_res: the metal resolution, specified as a factor
             of lmin.
         :param nonmetal_res: the substrate resolution, specified as a
@@ -384,8 +376,9 @@ class Mesh:
             An error will trigger if the internal CSX structures
             require a larger mesh than the one specified here.
         """
-        self.csx = csx
-        self.lmin = lmin
+        self._sim = sim
+        self._sim.register_mesh(self)
+        self.lmin = wavelength(self.sim.max_frequency(), self.sim.unit)
         self.metal_res = metal_res * self.lmin
         self.nonmetal_res = nonmetal_res * self.lmin
         self.smooth = smooth
@@ -420,12 +413,18 @@ class Mesh:
         # Bounds of the entire simulation box
         self.sim_bounds = [[], [], []]
         # The generated mesh.
-        self.mesh = csx.GetGrid()
+        self.mesh = self._sim.csx.GetGrid()
 
         # set later
         self.bounded_types = None
 
-    def generate_mesh(self, enforce_thirds=True, smooth=True):
+    @property
+    def sim(self) -> Simulation:
+        """
+        """
+        return self._sim
+
+    def generate_mesh(self, show_pml: bool = True):
         """
         Autogenerate a mesh given the CSX structure.
 
@@ -437,7 +436,7 @@ class Mesh:
             should always be enabled unless you want to debug the mesh
             generation.
         """
-        prims = self.csx.GetAllPrimitives()
+        prims = self.sim.csx.GetAllPrimitives()
         physical_prims = _physical_prims(prims)
         self._set_fixed_lines(physical_prims)
         bounds = _bounds_from_prims(physical_prims, self.fixed_lines)
@@ -448,6 +447,112 @@ class Mesh:
         self._gen_mesh_for_bounded_types(size_ordered_bounded_types)
 
         self._set_mesh_from_lines()
+        if show_pml:
+            self._show_pml(self.pml_boxes())
+        self.sim.post_mesh()
+
+    def _show_pml(self, boxes: List[Box3]) -> None:
+        """
+        """
+        for i, box in enumerate(boxes):
+            if not box.has_zero_dim():
+                pml_prop = self.sim.csx.AddMaterial("PML_" + str(i), epsilon=1)
+                pml_prop.SetColor("#d3d3d3", alpha=200)
+                pml_prop.AddBox(
+                    priority=-1, start=box.start(), stop=box.stop()
+                )
+
+    def pml_boxes(self) -> List[Box3]:
+        """
+        """
+        boxes = []
+        pml_cells = self.sim.boundary_conditions.pml_bounds()
+        # TODO find more concise way to do this
+        boxes.append(
+            Box3(
+                Coordinate3(
+                    self.mesh_lines[0][0],
+                    self.mesh_lines[1][0],
+                    self.mesh_lines[2][0],
+                ),
+                Coordinate3(
+                    self.mesh_lines[0][pml_cells[0][0]],
+                    self.mesh_lines[1][-1],
+                    self.mesh_lines[2][-1],
+                ),
+            )
+        )
+        boxes.append(
+            Box3(
+                Coordinate3(
+                    self.mesh_lines[0][-1],
+                    self.mesh_lines[1][0],
+                    self.mesh_lines[2][0],
+                ),
+                Coordinate3(
+                    self.mesh_lines[0][-1 - pml_cells[0][1]],
+                    self.mesh_lines[1][-1],
+                    self.mesh_lines[2][-1],
+                ),
+            )
+        )
+        boxes.append(
+            Box3(
+                Coordinate3(
+                    self.mesh_lines[0][0],
+                    self.mesh_lines[1][0],
+                    self.mesh_lines[2][0],
+                ),
+                Coordinate3(
+                    self.mesh_lines[0][-1],
+                    self.mesh_lines[1][pml_cells[1][0]],
+                    self.mesh_lines[2][-1],
+                ),
+            )
+        )
+        boxes.append(
+            Box3(
+                Coordinate3(
+                    self.mesh_lines[0][0],
+                    self.mesh_lines[1][-1],
+                    self.mesh_lines[2][0],
+                ),
+                Coordinate3(
+                    self.mesh_lines[0][-1],
+                    self.mesh_lines[1][-1 - pml_cells[1][1]],
+                    self.mesh_lines[2][-1],
+                ),
+            )
+        )
+        boxes.append(
+            Box3(
+                Coordinate3(
+                    self.mesh_lines[0][0],
+                    self.mesh_lines[1][0],
+                    self.mesh_lines[2][0],
+                ),
+                Coordinate3(
+                    self.mesh_lines[0][-1],
+                    self.mesh_lines[1][-1],
+                    self.mesh_lines[2][pml_cells[2][0]],
+                ),
+            )
+        )
+        boxes.append(
+            Box3(
+                Coordinate3(
+                    self.mesh_lines[0][0],
+                    self.mesh_lines[1][0],
+                    self.mesh_lines[2][-1],
+                ),
+                Coordinate3(
+                    self.mesh_lines[0][-1],
+                    self.mesh_lines[1][-1],
+                    self.mesh_lines[2][-1 - pml_cells[2][1]],
+                ),
+            )
+        )
+        return boxes
 
     def _gen_mesh_for_bounded_types(
         self, bounded_types: List[List[BoundedType]]
@@ -511,7 +616,7 @@ class Mesh:
         """
         """
         for btype in self.bounded_types[dim]:
-            if btype.get_bounds()[0] == upper:
+            if btype.get_bounds()[0] == upper and btype.size() != 0:
                 return self._pos_meshed(dim, btype.get_midpoint())
 
     def _type_below(self, dim: int, lower: float) -> Type:
@@ -695,8 +800,18 @@ class Mesh:
             return True
         return False
 
+    def _min_spacing(self, dist: float) -> float:
+        """
+        """
+        return dist / (self.min_lines - 1)
+
     def _lower_spacing(
-        self, dim: int, lower: float, line_below: float, is_metal: bool
+        self,
+        dim: int,
+        lower: float,
+        line_below: float,
+        dist: float,
+        is_metal: bool,
     ) -> float:
         """
         Compute spacing at the lower boundary for a bounded type.
@@ -705,6 +820,8 @@ class Mesh:
             lower_spacing = self.metal_res
         else:
             lower_spacing = self.nonmetal_res
+
+        lower_spacing = np.min([lower_spacing, self._min_spacing(dist)])
 
         if line_below and self._type_below_meshed(dim, lower):
             factor = 1
@@ -721,7 +838,12 @@ class Mesh:
         return lower_spacing
 
     def _upper_spacing(
-        self, dim: int, upper: float, line_above: float, is_metal: bool
+        self,
+        dim: int,
+        upper: float,
+        line_above: float,
+        dist: float,
+        is_metal: bool,
     ) -> float:
         """
         Compute spacing at the upper boundary for a bounded type.
@@ -730,6 +852,8 @@ class Mesh:
             upper_spacing = self.metal_res
         else:
             upper_spacing = self.nonmetal_res
+
+        upper_spacing = np.min([upper_spacing, self._min_spacing(dist)])
 
         if line_above and self._type_above_meshed(dim, upper):
             factor = 1
@@ -772,8 +896,13 @@ class Mesh:
         # worry about the case where the spacing is small. If its
         # large we assume we haven't meshed the adjacent structure and
         # ignore it.
-        lower_spacing = self._lower_spacing(dim, lower, line_below, is_metal)
-        upper_spacing = self._upper_spacing(dim, upper, line_above, is_metal)
+        dist = upper - lower
+        lower_spacing = self._lower_spacing(
+            dim, lower, line_below, dist, is_metal
+        )
+        upper_spacing = self._upper_spacing(
+            dim, upper, line_above, dist, is_metal
+        )
 
         if lower == upper:
             self._add_lines_to_mesh([lower], dim)

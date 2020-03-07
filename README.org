@@ -212,14 +212,6 @@ values as ~uf~ and the incident and reflected waves as ~inc~ and
 
 * To-Do
 ** TODO automesh should support primitive priorities
-** TODO add convenience structures
-These will be collections of primitives that are frequently needed,
-such as vias, a PCB stackup, a microstrip or GCPW line (adds grounding
-to the port), etc but are annoying to build out of CSXCAD primitives
-(for instance vias...). This will rely heavily on priorities, which is
-a primary reason the automesh needs to support it. This should present
-the user with some non-confusing way of setting priorities.
-
 ** TODO display PML
 Add network option to display PML. Should be implemented as an air
 primitive with negative priority.
@@ -240,3 +232,12 @@ generation, this will need to merge these BoundedType's with the
 adjacent (smallest?) BoundedType.
 
 ** TODO coax port
+** TODO mesh port transformations
+I'm not confident the ports will work at all unless all rotational
+transformations are a multiple of 90deg. Maybe the easiest thing to do
+is trigger an error if the user attempts a non-90deg
+rotation. Scalings, translations, should of course be fine.
+
+** TODO mesh should combine adjacent same type shapes in same plane
+This is tricky bc they need to have the same value for the other 2
+dimensions.

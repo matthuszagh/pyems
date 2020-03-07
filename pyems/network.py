@@ -10,6 +10,13 @@ from pyems.automesh import Mesh
 from pyems.utilities import wavelength, get_unit
 
 
+def order_ports_by_num(ports: List[Port]) -> List[Port]:
+    """
+    Reorder's ports by their specified number.
+    """
+    return sorted(ports, key=lambda port: port.get_number())
+
+
 class Network:
     """
     A network represents an electrical network.  It consists of one or
@@ -31,7 +38,7 @@ class Network:
         """
         """
         self.csx = csx
-        self.ports = ports
+        self.ports = order_ports_by_num(ports)
         self.mesh = mesh
 
         # set later

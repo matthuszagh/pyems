@@ -1,10 +1,15 @@
 from typing import List
-from CSXCAD.CSXCAD import ContinuousStructure
+from CSXCAD.CSTransform import CSTransform
 import numpy as np
 from openEMS.ports import UI_data
+from pyems.simulation_beta import Simulation
 from pyems.automesh import Mesh
+from pyems.utilities import apply_transform
+from pyems.coordinate import Box3, box_overlap
 
 
+# TODO self.csx_box is messy. Should instead wrap CSPrimitives and
+# member primitive should have a box.
 class Probe:
     """
     """
@@ -13,21 +18,21 @@ class Probe:
 
     def __init__(
         self,
-        csx: ContinuousStructure,
-        box: List[List[float]],
+        sim: Simulation,
+        box: Box3,
         p_type: int = 0,
         norm_dir: int = None,
-        transform_args: List[str] = None,
+        transform: CSTransform = None,
         weight: float = 1,
         mode_function: List = None,
     ):
         """
         """
-        self.csx = csx
-        self.box = box
+        self._sim = sim
+        self._box = box
         self.p_type = p_type
         self.norm_dir = norm_dir
-        self.transform_args = transform_args
+        self.transform = transform
         self.weight = weight
         self.mode_function = mode_function
         self.name = self._probe_name_prefix() + "t_" + str(self._get_ctr())
@@ -40,10 +45,33 @@ class Probe:
 
         self._set_probe()
 
+    @property
+    def sim(self) -> Simulation:
+        """
+        """
+        return self._sim
+
+    @property
+    def box(self) -> Box3:
+        """
+        """
+        return self._box
+
+    def pml_overlap(self) -> bool:
+        """
+        """
+        pml_boxes = self.sim.mesh.pml_boxes()
+        for pml_box in pml_boxes:
+            if box_overlap(self.box, pml_box):
+                return True
+        return False
+
     def _set_probe(self) -> None:
         """
         """
-        self.csx_probe = self.csx.AddProbe(name=self.name, p_type=self.p_type)
+        self.csx_probe = self.sim.csx.AddProbe(
+            name=self.name, p_type=self.p_type
+        )
         self.csx_probe.SetWeighting(self.weight)
 
         if self.norm_dir is not None:
@@ -53,10 +81,9 @@ class Probe:
             self.csx_probe.SetModeFunction(self.mode_function)
 
         self.csx_box = self.csx_probe.AddBox(
-            start=self.box[0], stop=self.box[1]
+            start=self.box.start(), stop=self.box.stop()
         )
-        if self.transform_args:
-            self.csx_box.AddTransform(*self.transform_args)
+        apply_transform(self.csx_box, self.transform)
 
     def snap_to_mesh(self, mesh) -> None:
         """
@@ -76,7 +103,7 @@ class Probe:
         :param mesh: Mesh object.
         :param dim: Dimension.  0, 1, 2 for x, y, z.
         """
-        if self.box[0][dim] == self.box[1][dim]:
+        if self.box.min_corner[dim] == self.box.max_corner[dim]:
             start = self.csx_box.GetStart()
             stop = self.csx_box.GetStop()
             _, pos = mesh.nearest_mesh_line(dim, start[dim])

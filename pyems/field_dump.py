@@ -1,39 +1,72 @@
-from typing import List
-import tempfile
-import shutil
+from tempfile import mkdtemp
 import os
 import subprocess
-import numpy as np
-from CSXCAD.CSXCAD import ContinuousStructure
+from pyems.simulation_beta import Simulation
+from pyems.coordinate import Box3
 
 
 class FieldDump:
     """
     """
 
+    unique_index = 0
+
     def __init__(
-        self, csx: ContinuousStructure, box: List[List[float]], field_type=0
+        self,
+        sim: Simulation,
+        box: Box3,
+        field_type: int = 0,
+        dir_path: str = "fields",
     ):
         """
+        :param dir_path: Directory where field dump data is stored.
+            The directory is interpreted as being relative to the
+            simulation directory.  Therefore, the default will place
+            the field dumps within a 'fields' subdirectory of the
+            simulation directory.  If left as None, a system temporary
+            directory will be used.
         """
-        self.csx = csx
-        self.unit = 1
-        self.box = np.multiply(self.unit, box)
-        self.field_type = field_type
-        self.dir_path = tempfile.mkdtemp()
+        self._sim = sim
+        self._box = box
+        self._field_type = field_type
+        self._index = self._get_inc_ctr()
+        if dir_path is None:
+            dir_path = mkdtemp()
+        else:
+            dir_path = os.path.abspath(
+                os.path.join(
+                    self._sim.sim_dir, dir_path + "_" + str(self._index)
+                )
+            )
+            if not os.path.exists(dir_path):
+                os.mkdir(dir_path)
+        self._dir_path = dir_path
 
-        self.field_dump = self.csx.AddDump(
-            os.path.join(self.dir_path, "Et_"),
-            dump_type=self.field_type,
+        dump = self._sim.csx.AddDump(
+            os.path.join(self._dir_path, "Et_"),
+            dump_type=self._field_type,
             file_type=0,
         )
-        self.field_dump.AddBox(self.box[0], self.box[1])
+        dump.AddBox(start=self.box.start(), stop=self.box.stop())
+        self._sim.add_field_dump(self)
 
-    def save(self, dir_path: str):
+    @property
+    def sim(self) -> Simulation:
         """
         """
-        # TODO doesn't work
-        shutil.copytree(self.dir_path, dir_path)
+        return self._sim
+
+    @property
+    def box(self) -> Box3:
+        """
+        """
+        return self._box
+
+    @property
+    def field_type(self) -> int:
+        """
+        """
+        return self._field_type
 
     def view(self):
         """
@@ -41,6 +74,29 @@ class FieldDump:
         subprocess.run(
             [
                 "paraview",
-                "--data={}".format(os.path.join(self.dir_path, "Et__..vtr")),
+                "--data={}".format(os.path.join(self._dir_path, "Et__..vtr")),
             ]
         )
+
+    @classmethod
+    def _get_ctr(cls):
+        """
+        Retrieve unique counter.
+        """
+        return cls.unique_index
+
+    @classmethod
+    def _inc_ctr(cls):
+        """
+        Increment unique counter.
+        """
+        cls.unique_index += 1
+
+    @classmethod
+    def _get_inc_ctr(cls):
+        """
+        Retrieve and increment unique counter.
+        """
+        ctr = cls._get_ctr()
+        cls._inc_ctr()
+        return ctr

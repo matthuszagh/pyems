@@ -3,6 +3,8 @@ from bisect import bisect_left
 from typing import List
 import numpy as np
 from CSXCAD.CSXCAD import ContinuousStructure
+from CSXCAD.CSPrimitives import CSPrimitives
+from CSXCAD.CSTransform import CSTransform
 
 
 # TODO should set max precision instead of precision list. Precision
@@ -66,6 +68,8 @@ def array_index(val, arr) -> int:
               given value.
     """
     lbound_idx = bisect_left(arr, val)
+    if lbound_idx == len(arr):
+        return len(arr) - 1
     lbound = arr[lbound_idx]
     if lbound_idx == len(arr):
         return lbound_idx
@@ -92,6 +96,15 @@ def float_cmp(a: float, b: float, tol: float) -> bool:
     :returns: True if within the specified tolerance, false otherwise.
     """
     if abs(a - b) <= tol:
+        return True
+    return False
+
+
+def float_leq(a: float, b: float, tol: float) -> bool:
+    """
+    Return a <= b, but with additional tolerance for float equality.
+    """
+    if a < b or float_cmp(a, b, tol):
         return True
     return False
 
@@ -144,6 +157,7 @@ def table_interp_val(
     :param permit_outside: If True, return lower or upper bound value
         if sel_val is outside table bounds.
     """
+    arr = np.array(arr)
     if permit_outside:
         if sel_val < arr[0][sel_col]:
             return arr[0][target_col]
@@ -153,7 +167,7 @@ def table_interp_val(
     if sel_val == arr[0][sel_col]:
         return arr[0][target_col]
     if sel_val == arr[-1][sel_col]:
-        return arr[-1][sel_val]
+        return arr[-1][target_col]
 
     ins_idx = table_insertion_idx(sel_val, arr, sel_col)
     xlow = arr[ins_idx - 1][sel_col]
@@ -199,3 +213,42 @@ def get_unit(csx: ContinuousStructure) -> float:
     """
     """
     return csx.GetGrid().GetDeltaUnit()
+
+
+def apply_transform(
+    prim: CSPrimitives, transform: CSTransform = None, replace: bool = False
+) -> None:
+    """
+    Apply a transformation to a primitive.  This allows you to pass
+    around and apply CSTransform objects directly, rather than having
+    to set all transforms via prim.AddTransform.
+
+    :param prim: The primitive to which the transform should be
+        applied.
+    :param transform: The transformation to apply.
+    :param replace: Replace any transforms previously applied to the
+        primitive.  Defaults to False, meaning any transforms applied
+        here will be applied on top of any existing transforms already
+        applied.
+    """
+    if transform is not None:
+        tr = prim.GetTransform()
+        concatenate = not replace
+        tr.SetMatrix(transform.GetMatrix(), concatenate)
+
+
+def append_transform(tr1: CSTransform, tr2: CSTransform) -> CSTransform:
+    """
+    Append two transforms and return the resulting, combined,
+    transform.
+
+    :param tr1: First transform.
+    :param tr2: Transform to append to first transform.  The first
+        transform will be applied to the primitive first, followed by
+        this transform.
+
+    :returns: Combined transform.
+    """
+    if tr2 is not None:
+        tr1.SetMatrix(tr2.GetMatrix(), True)
+    return tr1

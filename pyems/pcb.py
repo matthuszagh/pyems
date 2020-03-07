@@ -5,8 +5,20 @@ from pyems.utilities import (
     table_interp_val,
 )
 
+C0 = 299792458
+MUE0 = 4e-7 * np.pi
+EPS0 = 1 / (MUE0 * (C0 ** 2))
 
-class PCB:
+
+def loss_to_kappa(loss: float, freq: float, epsr: float) -> float:
+    """
+    """
+    return loss * EPS0 * epsr * 2 * np.pi * freq
+
+
+# TODO this might need to be adapted in the future to support a
+# different dielectric for each substrate layer.
+class PCBProperties:
     """
     A PCB structure and material properties for use in an openems simulation.
     """
@@ -14,7 +26,7 @@ class PCB:
     def __init__(
         self,
         substrate_epsr: List[Tuple[float, float]],
-        substrate_rho: float,
+        substrate_loss: List[Tuple[float, float]],
         copper_thickness: List[float],
         substrate_thickness: List[float],
         metal_conductivity: float,
@@ -23,7 +35,8 @@ class PCB:
         """
         :param substrate_epsr: substrate dielectric constant.
             dictionary of frequency (Hz) and associated dielectric.
-        :param substrate_rho: volume resistivity (ohm*mm)
+        :param substrate_loss: Substrate loss tangent.  Dictionary of
+            frequency (Hz) and associated loss tangent.
         :param copper_thickness: thickness of each conductive layer
             (in m).  Again proceeds from top to bottom layer.
         :param substrate_thickness: separations (in m) between
@@ -34,10 +47,13 @@ class PCB:
         :param via_plating_thickness: Thickness of the via plating (in
             m).
         """
-        self.substrate_epsr = sort_table_by_col(
+        self._substrate_epsr = sort_table_by_col(
             np.array(substrate_epsr), col=0
         )
-        self.substrate_rho = substrate_rho
+        self._substrate_loss = sort_table_by_col(
+            np.array(substrate_loss), col=0
+        )
+        self._substrate_kappa = self._kappa()
         self.copper_thick = copper_thickness
         self.substrate_thick = substrate_thickness
         self.metal_kappa = metal_conductivity
@@ -52,17 +68,24 @@ class PCB:
 
         :returns: dielectric constant
         """
-        return float(table_interp_val(self.substrate_epsr, 1, freq, 0, True))
+        return float(table_interp_val(self._substrate_epsr, 1, freq, 0, True))
 
-    def substrate_resistivity(self) -> float:
+    def kappa_at_freq(self, freq: float) -> float:
         """
+        Approximate the substrate conductivity at a given frequency
+        given the provided epsr and loss values.
         """
-        return self.substrate_rho
+        return float(table_interp_val(self._substrate_kappa, 1, freq, 0, True))
 
-    def substrate_conductivity(self) -> float:
+    def _kappa(self) -> List[Tuple[float, float]]:
         """
         """
-        return 1 / self.substrate_rho
+        kappas = []
+        for freq, loss in self._substrate_loss:
+            kappas.append(
+                (freq, loss_to_kappa(loss, freq, self.epsr_at_freq(freq)))
+            )
+        return kappas
 
     def copper_thickness(self, index: int, unit: float = 1) -> float:
         """
@@ -102,13 +125,24 @@ class PCB:
         """
         return self.metal_kappa
 
-    def num_layers(self) -> int:
+    def num_copper_layers(self) -> int:
         """
-        Return the number of copper layers.
+        Number of copper layers.
+
+        :returns: The number of copper layers.
         """
         return len(self.copper_thick)
 
-    def layer_dist(
+    def num_layers(self) -> int:
+        """
+        Total number of PCB layers.
+
+        :returns: The total number of PCB layers, including all copper
+                  and substrate layers.
+        """
+        return len(self.copper_thick) + len(self.substrate_thick)
+
+    def copper_layer_dist(
         self,
         layer: int,
         unit: float = 1,
@@ -133,11 +167,11 @@ class PCB:
             we measure to the top layer of the target layer from the
             top of the reference layer.
         """
-        num_layers = self.num_layers()
+        num_copper_layers = self.num_copper_layers()
         if (
-            layer >= num_layers
+            layer >= num_copper_layers
             or layer < 0
-            or ref_layer >= num_layers
+            or ref_layer >= num_copper_layers
             or ref_layer < 0
         ):
             raise ValueError("Invalid layer or ref_layer index.")
@@ -163,17 +197,23 @@ class PCB:
 # min annular ring = 4mil (0.1016mm)
 # min drill size = 10mil (0.254mm)
 common_pcbs = {
-    "oshpark4": PCB(
+    "oshpark4": PCBProperties(
         substrate_epsr=[
-            [100e6, 3.72],
-            [1e9, 3.69],
-            [2e9, 3.68],
-            [5e9, 3.64],
-            [10e9, 3.65],
+            (100e6, 3.72),
+            (1e9, 3.69),
+            (2e9, 3.68),
+            (5e9, 3.64),
+            (10e9, 3.65),
         ],
-        substrate_rho=4.4e14,
-        copper_thickness=np.multiply(1e-3, [0.0356, 0.0178, 0.0178, 0.0356]),
-        substrate_thickness=np.multiply(1e-3, [0.1702, 1.1938, 0.1702]),
+        substrate_loss=[
+            (100e6, 0.0072),
+            (1e9, 0.0091),
+            (2e9, 0.0092),
+            (5e9, 0.0098),
+            (10e9, 0.0095),
+        ],
+        copper_thickness=[0.0356e-3, 0.0178e-3, 0.0178e-3, 0.0356e-3],
+        substrate_thickness=[0.1702e-3, 1.1938e-3, 0.1702e-3],
         metal_conductivity=5.8e7,
         via_plating_thickness=0.0254e-3,
     )

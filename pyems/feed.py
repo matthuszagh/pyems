@@ -1,7 +1,10 @@
-from typing import List
-from CSXCAD.CSXCAD import ContinuousStructure
+from typing import List, Tuple
+import numpy as np
+from CSXCAD.CSTransform import CSTransform
+from pyems.simulation_beta import Simulation
 from pyems.automesh import Mesh
-from pyems.utilities import max_priority
+from pyems.utilities import max_priority, apply_transform
+from pyems.coordinate import Box3, box_overlap
 
 
 class Feed:
@@ -13,19 +16,18 @@ class Feed:
 
     def __init__(
         self,
-        csx: ContinuousStructure,
-        box: List[List[float]],
+        sim: Simulation,
+        box: Box3,
         excite_direction: List[float],
         excite_type: int = None,
-        resistance: float = None,
-        transform_args=None,
+        impedance: complex = None,
+        transform: CSTransform = None,
         weight_func=None,
         delay: int = 0,
     ):
         """
-        :param csx: CSX object.
-        :param box: Rectangular box giving feed dimensions.  [[x1, y1,
-            z1], [x2, y2, z2]]
+        :param sim: Simulation to which this feed is added.
+        :param box: Feed box.
         :param excite_direction: The direction that the excitation
             propagates.  Provide a list of 3 values corresponding to
             x, y, and z.  For instance, [0, 0, 1] would propagate in
@@ -33,20 +35,20 @@ class Feed:
         :param excite_type: Excitation type.  See `SetExcitation`.
             Leave as the default None, if you don't want an
             excitation.
-        :param resistance: Feed resistance.  If left as None, which is
+        :param impedance: Feed impedance.  If left as None, which is
             the default, the feed will have infinite impedance.  In
             this case make sure to terminate the structure in PMLs.
-        :param transform_args: Any transformations to apply to feed.
+        :param transform: A transform to apply to feed.
         :param weight_func: Excitation weighting function.  See
             `SetWeightFunction`.
         :param delay: Excitation delay in seconds.
         """
-        self.csx = csx
-        self.box = box
-        self.resistance = resistance
+        self._sim = sim
+        self._box = box
+        self.impedance = impedance
         self.excite_direction = excite_direction
         self.excite_type = excite_type
-        self.transform_args = transform_args
+        self.transform = transform
         self.weight_func = weight_func
         self.delay = delay
         self.excitation_box = None
@@ -54,12 +56,24 @@ class Feed:
 
         self.set_feed()
 
+    @property
+    def sim(self) -> Simulation:
+        """
+        """
+        return self._sim
+
+    @property
+    def box(self) -> Box3:
+        """
+        """
+        return self._box
+
     def set_feed(self) -> None:
         """
         Set excitation feed.
         """
         if self.excite_type is not None:
-            excitation = self.csx.AddExcitation(
+            excitation = self.sim.csx.AddExcitation(
                 name="excite_" + str(self._get_inc_ctr()),
                 exc_type=self.excite_type,
                 exc_val=self.excite_direction,
@@ -69,21 +83,46 @@ class Feed:
                 excitation.SetWeightFunction(self.weight_func)
 
             self.excitation_box = excitation.AddBox(
-                start=self.box[0], stop=self.box[1], priority=max_priority()
+                start=self.box.start(),
+                stop=self.box.stop(),
+                priority=max_priority(),
             )
 
-            if self.transform_args is not None:
-                self.excitation_box.AddTransform(*self.transform_args)
+            apply_transform(self.excitation_box, self.transform)
 
-        if self.resistance:
-            res = self.csx.AddLumpedElement(
+        if self.impedance:
+            rval, cval, lval = self._impedance_rcl()
+            res = self.sim.csx.AddLumpedElement(
                 name="resist_" + str(self._get_ctr()),
                 ny=self._resist_dir(),
                 caps=True,
-                R=self.resistance,
+                R=rval,
+                C=cval,
+                L=lval,
             )
-            self.res_box = res.AddBox(start=self.box[0], stop=self.box[1])
-            self.res_box.AddTransform(*self.transform_args)
+            self.res_box = res.AddBox(
+                start=self.box.start(), stop=self.box.stop()
+            )
+            apply_transform(self.res_box, self.transform)
+
+    def pml_overlap(self) -> bool:
+        """
+        """
+        pml_boxes = self.sim.mesh.pml_boxes()
+        for pml_box in pml_boxes:
+            if box_overlap(self.box, pml_box):
+                return True
+        return False
+
+    def _impedance_rcl(self) -> Tuple[float, float, float]:
+        """
+        """
+        if np.is_complex(self.impedance):
+            raise RuntimeWarning(
+                "Only feed resistances are currently supported."
+            )
+
+        return (np.real(self.impedance), 0, 0)
 
     def snap_to_mesh(self, mesh) -> None:
         """
@@ -103,7 +142,7 @@ class Feed:
         :param mesh: Mesh object.
         :param dim: Dimension.  0, 1, 2 for x, y, z.
         """
-        if self.box[0][dim] == self.box[1][dim]:
+        if self.box.min_corner[dim] == self.box.max_corner[dim]:
             start = self.excitation_box.GetStart()
             stop = self.excitation_box.GetStop()
             _, pos = mesh.nearest_mesh_line(dim, start[dim])
@@ -111,7 +150,7 @@ class Feed:
             stop[dim] = pos
             self.excitation_box.SetStart(start)
             self.excitation_box.SetStop(stop)
-            if self.resistance:
+            if self.impedance:
                 self.res_box.SetStart(start)
                 self.res_box.SetStop(stop)
 
