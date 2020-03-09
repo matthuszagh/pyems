@@ -18,6 +18,15 @@ from pyems.simulation_beta import Simulation
 from pyems.port import MicrostripPort
 
 
+priorities = {
+    "substrate": 0,
+    "ground": 1,
+    "keepout": 2,
+    "trace": 3,
+    "via_fill": 4,
+}
+
+
 def construct_circle(
     prop: CSProperties,
     center: Coordinate3,
@@ -135,8 +144,6 @@ class PCB(Structure):
         position: Coordinate3 = Coordinate3(0, 0, 0),
         layers: range = None,
         omit_copper: List[int] = [],
-        substrate_priority: int = 0,
-        copper_priority: int = 1,
         transform: CSTransform = None,
     ):
         """
@@ -166,8 +173,6 @@ class PCB(Structure):
         else:
             self._layers = layers
         self._omit_copper = omit_copper
-        self._substrate_priority = substrate_priority
-        self._copper_priority = copper_priority
         super().__init__(sim, transform)
 
         if self.position is not None:
@@ -190,12 +195,6 @@ class PCB(Structure):
         """
         """
         return self._position
-
-    @property
-    def copper_priority(self) -> int:
-        """
-        """
-        return self._copper_priority
 
     @property
     def width(self) -> float:
@@ -262,7 +261,7 @@ class PCB(Structure):
         xbounds = self._get_x_bounds()
         ybounds = self._get_y_bounds()
         box = layer_prop.AddBox(
-            priority=self._copper_priority,
+            priority=priorities["ground"],
             start=[xbounds[0], ybounds[0], zpos],
             stop=[xbounds[1], ybounds[1], zpos],
         )
@@ -292,7 +291,7 @@ class PCB(Structure):
             zpos,
         )
         box = layer_prop.AddBox(
-            priority=self._substrate_priority,
+            priority=priorities["substrate"],
             start=[xbounds[0], ybounds[0], zbounds[0]],
             stop=[xbounds[1], ybounds[1], zbounds[1]],
         )
@@ -366,8 +365,6 @@ class Via(Structure):
         drill: float,
         annular_ring: float,
         antipad: float,
-        metal_priority: int,
-        antipad_priority: int,
         layers: range = None,
         noconnect_layers: List[int] = [],
         fill: bool = False,
@@ -384,10 +381,6 @@ class Via(Structure):
         :param annular_ring: Width of the annular ring.
         :param antipad: Gap width between annular ring and surrounding
             copper pour for no-connect layers.
-        :param metal_priority: CSXCAD priority for annular ring and
-            via plating.
-        :param antipad_priority: CSXCAD priority for antipad.  Must be
-            set lower than metal_priority, or the via will be ignored.
         :param layers: The PCB copper layers spanned by the via.  The
             default value of None causes the via to span all layers.
             If you pass a python range object the via will only span
@@ -423,14 +416,6 @@ class Via(Structure):
         self._drill = drill
         self._annular_ring = annular_ring
         self._antipad = antipad
-        self._metal_priority = metal_priority
-        self._antipad_priority = antipad_priority
-        if self._antipad_priority >= self._metal_priority:
-            raise RuntimeWarning(
-                "Via antipad priority was not set lower than metal "
-                "priority. This will cause the via metal to be ignored "
-                "on these layers. Is this intentional?"
-            )
         if layers is None:
             self._layers = self.pcb.copper_layers()
         else:
@@ -502,7 +487,7 @@ class Via(Structure):
         ]
         via_prop = self.pcb.sim.csx.AddMetal(self._via_name())
         via_prim = via_prop.AddCylinder(
-            priority=self._metal_priority,
+            priority=priorities["trace"],
             start=start,
             stop=stop,
             radius=self._shell_radius(),
@@ -514,7 +499,7 @@ class Via(Structure):
                 self._air_name(), epsilon=1
             )
             air_prim = air_prop.AddCylinder(
-                priority=self._air_priority(),
+                priority=priorities["via_fill"],
                 start=start,
                 stop=stop,
                 radius=self._drill_radius(),
@@ -536,7 +521,7 @@ class Via(Structure):
                 center=Coordinate3(self.position.x, self.position.y, zpos),
                 radius=self.pad_radius(),
                 normal=Axis("z"),
-                priority=self._metal_priority,
+                priority=priorities["trace"],
             )
             apply_transform(pad_prim, self.pcb.transform)
 
@@ -559,14 +544,9 @@ class Via(Structure):
                 center=Coordinate3(self.position.x, self.position.y, zpos),
                 radius=self._antipad_radius(),
                 normal=Axis("z"),
-                priority=self._antipad_priority,
+                priority=priorities["keepout"],
             )
             apply_transform(antipad_prim, self.pcb.transform)
-
-    def _air_priority(self) -> int:
-        """
-        """
-        return self._metal_priority + 1
 
     def _air_name(self) -> str:
         """
@@ -624,8 +604,6 @@ class Microstrip(Structure):
         self,
         pcb: PCB,
         box: Box2,
-        trace_priority: int,
-        gap_priority: int,
         trace_layer: int = 0,
         gnd_layer: int = 1,
         gnd_gap: float = None,
@@ -648,10 +626,6 @@ class Microstrip(Structure):
             a port, the order matters since the probes and signal
             excitation will be setup to travel from the minimum x to
             maximum x.
-        :param trace_priority: CSXCAD priority for trace.
-        :param gap_priority: CSXCAD priority for gap.  This should be
-            lower than the trace priority but higher than the coplanar
-            ground priority.
         :param trace_layer: PCB layer of the signal trace.  Uses
             copper layer index values.
         :param gnd_layer: PCB layer of the ground plane.  Uses copper
@@ -691,13 +665,6 @@ class Microstrip(Structure):
         """
         self._pcb = pcb
         self._box = box
-        self._trace_priority = trace_priority
-        self._gap_priority = gap_priority
-        if self._gap_priority >= self._trace_priority:
-            raise RuntimeWarning(
-                "Microstrip gap priority was not set less than trace "
-                "priority. This will ignore the trace. Is that intended?"
-            )
         self._trace_layer = trace_layer
         self._gnd_layer = gnd_layer
         if gnd_gap is None:
@@ -787,7 +754,7 @@ class Microstrip(Structure):
         stop = self.box.stop()
         stop.append(trace_z)
         box = trace_prop.AddBox(
-            priority=self._trace_priority, start=start, stop=stop
+            priority=priorities["trace"], start=start, stop=stop
         )
         apply_transform(box, self.transform)
 
@@ -805,12 +772,19 @@ class Microstrip(Structure):
         start.append(trace_z)
         stop = self.box.stop()
         stop.append(trace_z)
-        start[1] -= self._gnd_gap
-        stop[1] += self._gnd_gap
+        direction = self._propagation_direction()
+        start[1] -= direction * self._gnd_gap
+        stop[1] += direction * self._gnd_gap
         gap_box = gap_prop.AddBox(
-            priority=self._gap_priority, start=start, stop=stop,
+            priority=priorities["keepout"], start=start, stop=stop,
         )
         apply_transform(gap_box, self.transform)
+
+    def _propagation_direction(self) -> int:
+        """
+        Get the direction of the signal propagation in the x-axis.
+        """
+        return int(np.sign(self.box.max_corner.x - self.box.min_corner.x))
 
     def _construct_via_fence(self) -> None:
         """
@@ -854,7 +828,7 @@ class Microstrip(Structure):
         )
         stop[1] = ypos
         box = via_prop.AddBox(
-            priority=self.pcb.copper_priority, start=start, stop=stop
+            priority=priorities["trace"], start=start, stop=stop
         )
         apply_transform(box, self.transform)
 
@@ -903,3 +877,517 @@ class Microstrip(Structure):
         """
         """
         return self.pcb.copper_layer_elevation(self._gnd_layer)
+
+
+class Taper(Structure):
+    """
+    Trace with different widths at the start and end.  Can be used to
+    smoothly transition between a trace of one width to a trace of
+    another width.
+
+    The taper proceeds in the positive x-direction, where width1 is
+    the width1 is the width at the lower x-value and width2 is the
+    width at the higher x-value.  This can be adjusted with a
+    transformation.
+    """
+
+    unique_index = 0
+
+    def __init__(
+        self,
+        pcb: PCB,
+        position: Coordinate2,
+        pcb_layer: int,
+        width1: float,
+        width2: float,
+        length: float,
+        gap: float,
+        transform: CSTransform = None,
+    ):
+        """
+        :param pcb: PCB object to which the taper is added.
+        :param position: Taper midpoint.  If set to None, the taper
+            will need to be constructed later manually with construct.
+        :param pcb_layer: PCB copper layer on which the taper should
+            be placed.
+        :param width1: Leftmost width.
+        :param width2: Rightmost width.
+        :param length: Taper length.  The width of the taper
+            increases/decreases linearly along the length.
+        :param gap: Distance between taper and surrounding coplanar
+            ground plane.
+        :param transform: Transform applied to the taper after any PCB
+            transforms.
+        """
+        self._pcb = pcb
+        self._position = position
+        self._pcb_layer = pcb_layer
+        self._width1 = width1
+        self._width2 = width2
+        self._length = length
+        self._gap = gap
+        self._transform = append_transform(self.pcb.transform, transform)
+
+        if self.position is not None:
+            self.construct(self.position)
+
+    @property
+    def pcb(self) -> PCB:
+        """
+        """
+        return self._pcb
+
+    @property
+    def position(self) -> Coordinate2:
+        """
+        """
+        return self._position
+
+    @property
+    def length(self) -> float:
+        """
+        """
+        return self._length
+
+    @property
+    def width1(self) -> float:
+        """
+        """
+        return self._width1
+
+    @property
+    def width2(self) -> float:
+        """
+        """
+        return self._width2
+
+    def construct(
+        self, position: Coordinate2, transform: CSTransform = None
+    ) -> None:
+        """
+        """
+        self._transform = append_transform(self.transform, transform)
+        self._position = position
+        self._construct_taper()
+        self._construct_gap()
+
+    def _construct_taper(self) -> None:
+        """
+        """
+        taper_prop = self.pcb.sim.csx.AddConductingSheet(
+            self._taper_name(),
+            conductivity=self.pcb.pcb_prop.metal_conductivity(),
+            thickness=self.pcb.pcb_prop.copper_thickness(self._pcb_layer),
+        )
+        pts = self._trapezoid_points(self.width1, self.width2)
+        zpos = self._taper_elevation()
+        taper_box = taper_prop.AddPolygon(
+            points=pts,
+            norm_dir=2,
+            elevation=zpos,
+            priority=priorities["trace"],
+        )
+        translate_vec = self.position.coordinate_list()
+        translate_vec.append(0)
+        translate = CSTransform()
+        translate.AddTransform("Translate", translate_vec)
+        apply_transform(taper_box, self.transform)
+        apply_transform(taper_box, translate)
+
+    def _construct_gap(self) -> None:
+        """
+        """
+        center_freq = self.pcb.sim.center_frequency()
+        gap_prop = self.pcb.sim.csx.AddMaterial(
+            self._gap_name(),
+            epsilon=self.pcb.pcb_prop.epsr_at_freq(center_freq),
+            kappa=self.pcb.pcb_prop.kappa_at_freq(center_freq),
+        )
+        pts = self._trapezoid_points(
+            self.width1 + (2 * self._gap), self.width2 + (2 * self._gap)
+        )
+        zpos = self._taper_elevation()
+        gap_box = gap_prop.AddPolygon(
+            points=pts,
+            norm_dir=2,
+            elevation=zpos,
+            priority=priorities["keepout"],
+        )
+        translate_vec = self.position.coordinate_list()
+        translate_vec.append(0)
+        translate = CSTransform()
+        translate.AddTransform("Translate", translate_vec)
+        apply_transform(gap_box, self.transform)
+        apply_transform(gap_box, translate)
+
+    def _trapezoid_points(
+        self, width1: float, width2: float
+    ) -> List[List[float]]:
+        """
+        Returns 4 trapezoid corners in the order bottom left, top
+        left, bottom right, top right.
+        """
+        # xmin = self.position.x - (self._length / 2)
+        # xmax = self.position.x + (self._length / 2)
+        # yl1 = self.position.y - (width1 / 2)
+        # yl2 = self.position.y + (width1 / 2)
+        # yr1 = self.position.y - (width2 / 2)
+        # yr2 = self.position.y + (width2 / 2)
+
+        xmin = -self._length / 2
+        xmax = self._length / 2
+        yl1 = -width1 / 2
+        yl2 = width1 / 2
+        yr1 = -width2 / 2
+        yr2 = width2 / 2
+
+        return [[xmin, xmin, xmax, xmax], [yl1, yl2, yr2, yr1]]
+
+    def _taper_name(self) -> str:
+        """
+        """
+        return "taper_" + str(self._get_ctr())
+
+    def _gap_name(self) -> str:
+        """
+        """
+        return "taper_" + str(self._get_ctr()) + "_gap"
+
+    def _taper_elevation(self) -> float:
+        """
+        """
+        return self.pcb.copper_layer_elevation(self._pcb_layer)
+
+
+class SMDPassiveDimensions:
+    """
+    """
+
+    def __init__(self, length: float, width: float, height: float):
+        """
+        """
+        self._unit_set = False
+        self._length = length
+        self._width = width
+        self._height = height
+
+    @property
+    def length(self) -> float:
+        """
+        """
+        if not self._unit_set:
+            raise RuntimeError(
+                "Set SMD passive unit before accessing dimensions."
+            )
+        return self._length
+
+    @property
+    def width(self) -> float:
+        """
+        """
+        if not self._unit_set:
+            raise RuntimeError(
+                "Set SMD passive unit before accessing dimensions."
+            )
+        return self._width
+
+    @property
+    def height(self) -> float:
+        """
+        """
+        if not self._unit_set:
+            raise RuntimeError(
+                "Set SMD passive unit before accessing dimensions."
+            )
+        return self._height
+
+    def set_unit(self, unit: float) -> None:
+        """
+        """
+        if self._unit_set:
+            return
+        self._length /= unit
+        self._width /= unit
+        self._height /= unit
+        self._unit_set = True
+
+
+common_smd_passives = {
+    "0402C": SMDPassiveDimensions(length=1e-3, width=0.5e-3, height=0.5e-3)
+}
+
+
+class SMDPassive(Structure):
+    """
+    Small surface-mount capacitor, resistor, or inductor.
+    """
+
+    unique_index = 0
+
+    def __init__(
+        self,
+        pcb: PCB,
+        position: Coordinate2,
+        dimensions: SMDPassiveDimensions,
+        pad_width: float,
+        pad_length: float,
+        gap: float,
+        c: float = 0,
+        r: float = 0,
+        l: float = 0,
+        pcb_layer: int = 0,
+        gnd_cutout_width: float = 0,
+        gnd_cutout_length: float = 0,
+        taper: Taper = None,
+        transform: CSTransform = None,
+    ):
+        """
+        :param pcb: PCB object to which this SMD will be added.
+        :param position: Position of the center of the SMD passive on
+            the PCB.  This can be set to None, in which case construct
+            will need to be called manually to create the SMD.
+        :param dimensions: SMD passive dimensions.  Use meters, rather
+            than simulation default unit.
+        :param pad_width: SMD pad width.
+        :param pad_length: SMD pad length.
+        :param gap: Coplanar ground plane keepout distance.  The
+            distance from the pad edge to adjacent ground plane.
+        :param c: Capacitance value (in farads).
+        :param r: Resistance value (in ohms).
+        :param l: Inductance value (in henrys)
+        :param pcb_layer: PCB copper layer where the SMD is placed.
+            Must be set to the top or bottom layer.
+        :param gnd_cutout_width: Width of the ground cutout, as a
+            proportion of the pad width.
+        :param gnd_cutout_length: Length of the ground cutout, as a
+            proportion of length between the ends of the pads.
+        :param taper: Taper the transition between the trace and SMD
+            pad.  None means do not add a taper.
+        :param transform: Transform applied to the SMD after any
+            transforms applied to the PCB.
+        """
+        self._pcb = pcb
+        self._position = position
+        self._dimensions = dimensions
+        self._dimensions.set_unit(self.pcb.sim.unit)
+        self._pad_width = pad_width
+        self._pad_length = pad_length
+        self._gap = gap
+        self._c = c
+        self._r = r
+        self._l = l
+        self._pcb_layer = pcb_layer
+        self._check_pcb_layer()
+        self._gnd_cutout_width = gnd_cutout_width * pad_width
+        self._gnd_cutout_length = gnd_cutout_length * (
+            pad_length + self._dimensions.length
+        )
+        self._taper = taper
+        self._transform = append_transform(self.pcb.transform, transform)
+
+        if self.position is not None:
+            self.construct(self.position)
+
+    @property
+    def position(self) -> Coordinate2:
+        """
+        """
+        return self._position
+
+    @property
+    def dimensions(self) -> SMDPassiveDimensions:
+        """
+        """
+        return self._dimensions
+
+    @property
+    def pcb(self) -> PCB:
+        """
+        """
+        return self._pcb
+
+    def construct(self, position: Coordinate2) -> None:
+        """
+        """
+        self._position = position
+        self._construct_pads()
+        self._construct_smd()
+        self._construct_gap()
+        self._construct_cutout()
+        self._construct_taper()
+
+    def _construct_pads(self) -> None:
+        """
+        """
+        pad_prop = self.pcb.sim.csx.AddConductingSheet(
+            self._pad_name(),
+            conductivity=self.pcb.pcb_prop.metal_conductivity(),
+            thickness=self.pcb.pcb_prop.copper_thickness(self._pcb_layer),
+        )
+        zpos = self._pad_elevation()
+        for pad_middle in [
+            self.position.x - (self.dimensions.length / 2),
+            self.position.x + (self.dimensions.length / 2),
+        ]:
+            xmin = pad_middle - self._pad_length / 2
+            xmax = pad_middle + self._pad_length / 2
+            ymin = self.position.y - self._pad_width / 2
+            ymax = self.position.y + self._pad_width / 2
+            pad_box = pad_prop.AddBox(
+                priority=priorities["trace"],
+                start=[xmin, ymin, zpos],
+                stop=[xmax, ymax, zpos],
+            )
+            apply_transform(pad_box, self.transform)
+
+    def _construct_smd(self) -> None:
+        """
+        """
+        smd_prop = self.pcb.sim.csx.AddLumpedElement(
+            self._smd_name(), ny=0, caps=True, R=self._r, C=self._c, L=self._l
+        )
+        smd_box = smd_prop.AddBox(
+            priority=priorities["trace"],
+            start=[
+                self.position.x - (self.dimensions.length / 2),
+                self.position.y - (self.dimensions.width / 2),
+                self._pad_elevation(),
+            ],
+            stop=[
+                self.position.x + (self.dimensions.length / 2),
+                self.position.y + (self.dimensions.width / 2),
+                self._pad_elevation() + self.dimensions.height,
+            ],
+        )
+        apply_transform(smd_box, self.transform)
+
+    def _construct_gap(self) -> None:
+        """
+        """
+        xmin = (
+            self.position.x
+            - (self.dimensions.length / 2)
+            - (self._pad_length / 2)
+        )
+        xmax = (
+            self.position.x
+            + (self.dimensions.length / 2)
+            + (self._pad_length / 2)
+        )
+        ymin = self.position.y - (self.dimensions.width / 2) - self._gap
+        ymax = self.position.y + (self.dimensions.width / 2) + self._gap
+        zpos = self._pad_elevation()
+
+        center_freq = self.pcb.sim.center_frequency()
+        gap_prop = self.pcb.sim.csx.AddMaterial(
+            self._gap_name(),
+            epsilon=self.pcb.pcb_prop.epsr_at_freq(center_freq),
+            kappa=self.pcb.pcb_prop.kappa_at_freq(center_freq),
+        )
+        gap_box = gap_prop.AddBox(
+            priority=priorities["keepout"],
+            start=[xmin, ymin, zpos],
+            stop=[xmax, ymax, zpos],
+        )
+        apply_transform(gap_box, self.transform)
+
+    def _construct_cutout(self) -> None:
+        """
+        """
+        if self._gnd_cutout_length == 0 or self._gnd_cutout_width == 0:
+            return
+        xmin = self.position.x - (self._gnd_cutout_length / 2)
+        xmax = self.position.x + (self._gnd_cutout_length / 2)
+        ymin = self.position.y - (self._gnd_cutout_width / 2)
+        ymax = self.position.y + (self._gnd_cutout_width / 2)
+        zpos = self._gnd_elevation()
+
+        center_freq = self.pcb.sim.center_frequency()
+        cutout_prop = self.pcb.sim.csx.AddMaterial(
+            self._cutout_name(),
+            epsilon=self.pcb.pcb_prop.epsr_at_freq(center_freq),
+            kappa=self.pcb.pcb_prop.kappa_at_freq(center_freq),
+        )
+        cutout_box = cutout_prop.AddBox(
+            priority=priorities["keepout"],
+            start=[xmin, ymin, zpos],
+            stop=[xmax, ymax, zpos],
+        )
+        apply_transform(cutout_box, self.transform)
+
+    def _construct_taper(self) -> None:
+        """
+        """
+        if self._taper is None:
+            return
+
+        pos1 = Coordinate2(
+            self.position.x
+            - (self.dimensions.length / 2)
+            - (self._pad_length / 2)
+            - (self._taper.length / 2),
+            self.position.y,
+        )
+        pos2 = Coordinate2(
+            self.position.x
+            + (self.dimensions.length / 2)
+            + (self._pad_length / 2)
+            + (self._taper.length / 2),
+            self.position.y,
+        )
+
+        tr = CSTransform()
+        tr.AddTransform("RotateAxis", "z", 180)
+        self._taper.construct(pos1)
+        self._taper.construct(pos2, tr)
+
+    def _smd_name(self) -> str:
+        """
+        """
+        return "SMDPassive_" + str(self._get_ctr())
+
+    def _pad_name(self) -> str:
+        """
+        """
+        return self._smd_name() + "_pad"
+
+    def _gap_name(self) -> str:
+        """
+        """
+        return self._smd_name() + "_gap"
+
+    def _cutout_name(self) -> str:
+        """
+        """
+        return self._smd_name() + "_cutout"
+
+    def _pad_elevation(self) -> float:
+        """
+        """
+        return self.pcb.copper_layer_elevation(self._pcb_layer)
+
+    def _gnd_elevation(self) -> float:
+        """
+        """
+        if self._upside_down():
+            gnd_layer = self._pcb_layer - 1
+        else:
+            gnd_layer = self._pcb_layer + 1
+        return self.pcb.copper_layer_elevation(gnd_layer)
+
+    def _check_pcb_layer(self) -> None:
+        """
+        """
+        if (
+            self._pcb_layer != self.pcb.copper_layers()[0]
+            and self._pcb_layer != self.pcb.copper_layers()[-1]
+        ):
+            raise ValueError("Invalid copper layer for SMD passive.")
+
+    def _upside_down(self) -> bool:
+        """
+        """
+        if self._pcb_layer == self.pcb.copper_layers()[0]:
+            return False
+        else:
+            return True

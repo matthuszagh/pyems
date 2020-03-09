@@ -40,7 +40,6 @@ after mesh generation.
 
 from copy import deepcopy
 from abc import ABC, abstractmethod
-from typing import List
 import numpy as np
 from CSXCAD.CSTransform import CSTransform
 from pyems.simulation_beta import Simulation

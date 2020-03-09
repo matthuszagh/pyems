@@ -2,7 +2,7 @@ import os
 import subprocess
 import sys
 import shutil
-from typing import Tuple
+from typing import List
 from tempfile import mkdtemp
 import numpy as np
 from openEMS import openEMS
@@ -273,3 +273,38 @@ class Simulation:
         """
         """
         self._mesh = mesh
+
+
+def sweep(sims: List[Simulation], func, processes: int = 11):
+    """
+    Dispatch a number of simulations and then apply a function to each
+    simulation after completion.  The function must take a single
+    `Simulation` as an argument and return the result of interest.
+
+    :param sims: A list of simulation objects to simulate and then
+        process with `function_object`.  It is up to the caller to
+        ensure that these simulation objects differ from one another
+        in the desired way.
+    :param func: The function object to apply to each simulation after
+        that simulation has completed.  This must take a single
+        Simulation object as an argument.  Use partials when the
+        function takes more arguments.  Additionally, it must return
+        the sweep data point.
+    :param nodes: The number of simulations to run in parallel.
+        OpenEMS already performs multithreading and so it's best to
+        leave this significantly below the number of physical cores.
+
+    :returns: A list where each entry is the return value of
+              `function_object` applied to a single simulation from
+              `simulations`.  The order between returned values and
+              input simulations is preserved.  That is, the first item
+              in the return value list corresponds to
+              `simulations[0]`, etc.
+    """
+    # TODO requires pickling support for openems cython types
+    # pool = Pool(processes=processes)
+    # ret_vals = list(pool.map(func, sims))
+    ret_vals = []
+    for sim in sims:
+        ret_vals.append(func(sim))
+    return ret_vals

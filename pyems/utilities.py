@@ -239,8 +239,7 @@ def apply_transform(
 
 def append_transform(tr1: CSTransform, tr2: CSTransform) -> CSTransform:
     """
-    Append two transforms and return the resulting, combined,
-    transform.
+    Append two transforms.
 
     :param tr1: First transform.
     :param tr2: Transform to append to first transform.  The first
@@ -249,6 +248,20 @@ def append_transform(tr1: CSTransform, tr2: CSTransform) -> CSTransform:
 
     :returns: Combined transform.
     """
+    if tr1 is None:
+        tr1 = CSTransform()
     if tr2 is not None:
         tr1.SetMatrix(tr2.GetMatrix(), True)
     return tr1
+
+
+def mil_to_mm(mil_val: float) -> float:
+    """
+    """
+    return mil_val * 0.0254
+
+
+def mm_to_mil(mm_val: float) -> float:
+    """
+    """
+    return mm_val / 0.0254
