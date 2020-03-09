@@ -223,18 +223,21 @@ class PCB(Structure):
         """
         return range(int(self.layers[0] / 2), int(self.layers[-1] / 2) + 1)
 
-    def construct(self, position: Coordinate3) -> None:
-        """
-        """
-        self._position = position
-        zpos = self.position.z
-        for layer in self.layers:
-            zpos = self._construct_layer(zpos, layer)
-
     def _is_copper_layer(self, layer_index: int) -> bool:
         """
         """
         return layer_index % 2 == 0
+
+    def construct(
+        self, position: Coordinate3, transform: CSTransform = None
+    ) -> None:
+        """
+        """
+        self._position = position
+        self._transform = append_transform(self._transform, transform)
+        zpos = 0
+        for layer in self.layers:
+            zpos = self._construct_layer(zpos, layer)
 
     def _construct_layer(self, zpos: float, layer_index: int) -> float:
         """
@@ -258,6 +261,7 @@ class PCB(Structure):
                 self._copper_index(layer_index)
             ),
         )
+
         xbounds = self._get_x_bounds()
         ybounds = self._get_y_bounds()
         box = layer_prop.AddBox(
@@ -266,6 +270,10 @@ class PCB(Structure):
             stop=[xbounds[1], ybounds[1], zpos],
         )
         apply_transform(box, self.transform)
+
+        translate = CSTransform()
+        translate.AddTransform("Translate", self._position.coordinate_list())
+        apply_transform(box, translate)
 
         return zpos
 
@@ -297,23 +305,21 @@ class PCB(Structure):
         )
         apply_transform(box, self.transform)
 
+        translate = CSTransform()
+        translate.AddTransform("Translate", self._position.coordinate_list())
+        apply_transform(box, translate)
+
         return zbounds[0]
 
     def _get_x_bounds(self) -> Tuple[float, float]:
         """
         """
-        return (
-            self.position.x - (self._length / 2),
-            self.position.x + (self._length / 2),
-        )
+        return (-(self._length / 2), (self._length / 2))
 
     def _get_y_bounds(self) -> Tuple[float, float]:
         """
         """
-        return (
-            self.position.y - (self._width / 2),
-            self.position.y + (self._width / 2),
-        )
+        return (-(self._width / 2), (self._width / 2))
 
     def _copper_index(self, layer_index: int) -> int:
         """
