@@ -433,7 +433,7 @@ class PlanarPort(Port):
         Set trace.
         """
         trace_prop = self._sim.csx.AddConductingSheet(
-            "Microstrip_Trace_" + self.number,
+            "Microstrip_Trace_" + str(self.number),
             conductivity=self.conductivity,
             thickness=self.thickness,
         )
