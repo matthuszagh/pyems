@@ -84,9 +84,14 @@ class Structure(ABC):
         self._transform = transform
 
     @abstractmethod
-    def construct(self, position) -> None:
+    def construct(self, position, transform: CSTransform) -> None:
         """
-        Build the structure.
+        Build the structure.  For each substructure this is a 3-stage
+        process.  The substructure should be constructed as though the
+        entire structure were being constructed at the origin.  Then,
+        any transformations should be applied.  Finally, the structure
+        should be translated to its final position.  This makes
+        transformations easier to apply.
         """
         pass
 
@@ -262,8 +267,8 @@ class PCB(Structure):
             ),
         )
 
-        xbounds = self._get_x_bounds()
-        ybounds = self._get_y_bounds()
+        xbounds = self._centered_x_bounds()
+        ybounds = self._centered_y_bounds()
         box = layer_prop.AddBox(
             priority=priorities["ground"],
             start=[xbounds[0], ybounds[0], zpos],
@@ -287,8 +292,8 @@ class PCB(Structure):
             epsilon=self.pcb_prop.epsr_at_freq(self.sim.center_frequency()),
             kappa=self.pcb_prop.kappa_at_freq(self.sim.center_frequency()),
         )
-        xbounds = self._get_x_bounds()
-        ybounds = self._get_y_bounds()
+        xbounds = self._centered_x_bounds()
+        ybounds = self._centered_y_bounds()
         zbounds = (
             zpos
             - self.pcb_prop.copper_layer_dist(
@@ -311,12 +316,12 @@ class PCB(Structure):
 
         return zbounds[0]
 
-    def _get_x_bounds(self) -> Tuple[float, float]:
+    def _centered_x_bounds(self) -> Tuple[float, float]:
         """
         """
         return (-(self._length / 2), (self._length / 2))
 
-    def _get_y_bounds(self) -> Tuple[float, float]:
+    def _centered_y_bounds(self) -> Tuple[float, float]:
         """
         """
         return (-(self._width / 2), (self._width / 2))
@@ -638,8 +643,8 @@ class Microstrip(Structure):
             layer index values.
         :param gnd_gap: Gap distance between trace edge and
             surrounding coplanar ground plane.  If left as the default
-            value of None, the entire coplanar ground plane will be
-            removed.
+            value of None, no gap will be set.  Ensure the copper
+            plane is removed from the trace layer if this is the case.
         :param via_gap: Gap distance between the start of the coplanar
             ground plane and the surrounding via fence.  If set to
             None, a via fence is not used.
@@ -673,11 +678,10 @@ class Microstrip(Structure):
         self._box = box
         self._trace_layer = trace_layer
         self._gnd_layer = gnd_layer
+        self._gnd_gap = gnd_gap
         if gnd_gap is None:
-            self._gnd_gap = self.pcb.width / 2 - (self.trace_width() / 2)
             self._via_gap = None
         else:
-            self._gnd_gap = gnd_gap
             self._via_gap = via_gap
         self._via = via
         self._via_spacing = via_spacing
@@ -737,6 +741,7 @@ class Microstrip(Structure):
             box=self._port_box(),
             number=self.port_number,
             thickness=self.pcb.pcb_prop.copper_thickness(self._trace_layer),
+            priority=priorities["trace"],
             conductivity=self.pcb.pcb_prop.metal_conductivity(),
             excite=self._excite,
             feed_impedance=self._feed_impedance,
@@ -767,6 +772,9 @@ class Microstrip(Structure):
     def _construct_gap(self) -> None:
         """
         """
+        if self._gnd_gap is None:
+            return
+
         freq = self.pcb.sim.center_frequency()
         gap_prop = self.pcb.sim.csx.AddMaterial(
             self._gap_name(),
@@ -921,7 +929,8 @@ class Taper(Structure):
         :param length: Taper length.  The width of the taper
             increases/decreases linearly along the length.
         :param gap: Distance between taper and surrounding coplanar
-            ground plane.
+            ground plane.  If gap is set to None, no gap is used.
+            Ensure coplanar copper pour is removed if this is used.
         :param transform: Transform applied to the taper after any PCB
             transforms.
         """
@@ -1003,6 +1012,9 @@ class Taper(Structure):
     def _construct_gap(self) -> None:
         """
         """
+        if self._gap is None:
+            return
+
         center_freq = self.pcb.sim.center_frequency()
         gap_prop = self.pcb.sim.csx.AddMaterial(
             self._gap_name(),
@@ -1033,13 +1045,6 @@ class Taper(Structure):
         Returns 4 trapezoid corners in the order bottom left, top
         left, bottom right, top right.
         """
-        # xmin = self.position.x - (self._length / 2)
-        # xmax = self.position.x + (self._length / 2)
-        # yl1 = self.position.y - (width1 / 2)
-        # yl2 = self.position.y + (width1 / 2)
-        # yr1 = self.position.y - (width2 / 2)
-        # yr2 = self.position.y + (width2 / 2)
-
         xmin = -self._length / 2
         xmax = self._length / 2
         yl1 = -width1 / 2
@@ -1157,7 +1162,9 @@ class SMDPassive(Structure):
         :param pad_width: SMD pad width.
         :param pad_length: SMD pad length.
         :param gap: Coplanar ground plane keepout distance.  The
-            distance from the pad edge to adjacent ground plane.
+            distance from the pad edge to adjacent ground plane.  If
+            set to None, no gap is used.  Ensure coplanar copper pour
+            is removed if this is used.
         :param c: Capacitance value (in farads).
         :param r: Resistance value (in ohms).
         :param l: Inductance value (in henrys)
@@ -1270,6 +1277,9 @@ class SMDPassive(Structure):
     def _construct_gap(self) -> None:
         """
         """
+        if self._gap is None:
+            return
+
         xmin = (
             self.position.x
             - (self.dimensions.length / 2)

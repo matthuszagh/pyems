@@ -211,19 +211,9 @@ values as ~uf~ and the incident and reflected waves as ~inc~ and
 ~ref~.
 
 * To-Do
+** TODO transformations should be applied before position translation
+** TODO structure construct methods should support an additional transform
 ** TODO automesh should support primitive priorities
-** TODO display PML
-Add network option to display PML. Should be implemented as an air
-primitive with negative priority.
-
-** TODO PML warning for probes / feeds / nf2ff box
-Mesh / structure generation should emit a warning (error?) when a
-probe/feed/nf2ff box (what about field dump boxes?) are placed in a
-PML. As far as I can tell this is never the correct behavior.
-
-There should also be a way to list every primitive that overlaps the
-PML, even if the overlap is innocuous.
-
 ** TODO automesh option to ignore very small structures
 This is useful when your model inadvertently creates tiny structures
 (i.e. two overlapping objects are almost the same size) that would
