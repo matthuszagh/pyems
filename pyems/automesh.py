@@ -192,10 +192,7 @@ def _factor_for_num(num: int, smaller_spacing: float, dist: float) -> float:
     sum is equal to a provided distance.
     """
     roots = scipy.optimize.fsolve(
-        func=_geom_dist_zero,
-        x0=1.5,
-        args=(num, smaller_spacing, dist),
-        xtol=1e-4,
+        func=_geom_dist_zero, x0=1.5, args=(num, smaller_spacing, dist)
     )
     factor = roots[0]
     return factor
@@ -263,6 +260,43 @@ def _geom_series(
         factor = _factor_for_num(num, smaller_spacing, dist)
 
     return (factor, num)
+
+
+def _spacing_at_dist(spacing: float, dist: float, max_factor: float) -> float:
+    """
+    """
+    factor, num = _num_for_factor(max_factor, spacing, dist)
+    return spacing * (factor ** (num - 1))
+
+
+def _spacings_at_dist_zero(
+    dist: float,
+    lower_spacing: float,
+    upper_spacing: float,
+    total_dist: float,
+    max_factor: float,
+) -> float:
+    """
+    """
+    spacing1 = _spacing_at_dist(lower_spacing, dist, max_factor)
+    spacing2 = _spacing_at_dist(upper_spacing, total_dist - dist, max_factor)
+    return spacing2 - spacing1
+
+
+def _dist_for_max_spacings(
+    lower_spacing: float, upper_spacing: float, dist: float, max_factor: float
+) -> float:
+    """
+    Compute the distance from a lower bound such that the last spacing
+    from the upper bound and lower bound are equal.
+    """
+    roots = scipy.optimize.fsolve(
+        func=_spacings_at_dist_zero,
+        x0=dist / 2,
+        args=(lower_spacing, upper_spacing, dist, max_factor),
+    )
+    lower_dist = roots[0]
+    return lower_dist
 
 
 def _pos_in_bounds(pos: float, lower: float, upper: float) -> bool:
@@ -529,6 +563,36 @@ class Mesh:
             )
         )
         return boxes
+
+    def sim_box(self, include_pml: bool = True) -> Box3:
+        """
+        """
+        pml_cells = self.sim.boundary_conditions.pml_bounds()
+        if include_pml:
+            return Box3(
+                Coordinate3(
+                    self.mesh_lines[0][0],
+                    self.mesh_lines[1][0],
+                    self.mesh_lines[2][0],
+                ),
+                Coordinate3(
+                    self.mesh_lines[0][-1],
+                    self.mesh_lines[1][-1],
+                    self.mesh_lines[2][-1],
+                ),
+            )
+        return Box3(
+            Coordinate3(
+                self.mesh_lines[0][pml_cells[0][0]],
+                self.mesh_lines[1][pml_cells[1][0]],
+                self.mesh_lines[2][pml_cells[2][0]],
+            ),
+            Coordinate3(
+                self.mesh_lines[0][-1 - pml_cells[0][0]],
+                self.mesh_lines[1][-1 - pml_cells[1][0]],
+                self.mesh_lines[2][-1 - pml_cells[2][0]],
+            ),
+        )
 
     def _gen_mesh_for_bounded_types(
         self, bounded_types: List[List[BoundedType]]
@@ -879,12 +943,16 @@ class Mesh:
         upper_spacing = self._upper_spacing(
             dim, upper, line_above, dist, is_metal
         )
+        if is_metal:
+            max_spacing = self.metal_res
+        else:
+            max_spacing = self.nonmetal_res
 
         if lower == upper:
             self._add_lines_to_mesh([lower], dim)
         else:
             lines = self._gen_lines_in_bounds(
-                lower, upper, lower_spacing, upper_spacing, dim
+                lower, upper, lower_spacing, upper_spacing, max_spacing, dim
             )
 
             if is_metal:
@@ -906,7 +974,12 @@ class Mesh:
                     # upper_spacing += adj
                 # TODO is this good enough?
                 lines = self._gen_lines_in_bounds(
-                    lower, upper, lower_spacing, upper_spacing, dim
+                    lower,
+                    upper,
+                    lower_spacing,
+                    upper_spacing,
+                    max_spacing,
+                    dim,
                 )
             else:
                 rebuild_lines = False
@@ -920,7 +993,12 @@ class Mesh:
                     upper -= 2 * last_spacing / 3
                 if rebuild_lines:
                     lines = self._gen_lines_in_bounds(
-                        lower, upper, lower_spacing, upper_spacing, dim
+                        lower,
+                        upper,
+                        lower_spacing,
+                        upper_spacing,
+                        max_spacing,
+                        dim,
                     )
 
             self._add_lines_to_mesh(lines, dim)
@@ -946,7 +1024,7 @@ class Mesh:
 
         return False
 
-    def _gen_lines_in_bounds(
+    def _lines_const_factor_in_bounds(
         self,
         lower: float,
         upper: float,
@@ -982,6 +1060,57 @@ class Mesh:
 
         lines[-1] = upper  # last line should be exactly equal to upper
         return lines
+
+    def _gen_lines_in_bounds(
+        self,
+        lower: float,
+        upper: float,
+        lower_spacing: float,
+        upper_spacing: float,
+        max_spacing: float,
+        dim: int,
+    ) -> np.array:
+        """
+        """
+        dist = upper - lower
+        smaller_spacing = np.min([lower_spacing, upper_spacing])
+        larger_spacing = np.max([lower_spacing, upper_spacing])
+        num_lower = dist / larger_spacing
+        if (
+            num_lower < self.min_lines
+            or _spacing_at_dist(smaller_spacing, dist, self.smooth[dim])
+            < larger_spacing
+        ):
+            return self._lines_const_factor_in_bounds(
+                lower, upper, lower_spacing, upper_spacing, dim
+            )
+
+        mid_spacing_dist = _dist_for_max_spacings(
+            lower_spacing, upper_spacing, dist, self.smooth[dim]
+        )
+        midpt = lower + mid_spacing_dist
+        lower_factor, lower_num = _num_for_factor(
+            self.smooth[dim], lower_spacing, midpt - lower
+        )
+        upper_factor, upper_num = _num_for_factor(
+            self.smooth[dim], upper_spacing, upper - midpt
+        )
+        mid_spacing = np.min(
+            [
+                max_spacing,
+                lower_spacing * (lower_factor ** lower_num),
+                upper_spacing * (upper_factor ** upper_num),
+            ]
+        )
+        lines_lower = self._lines_const_factor_in_bounds(
+            lower, midpt, lower_spacing, mid_spacing, dim
+        )
+        lines_upper = self._lines_const_factor_in_bounds(
+            midpt, upper, mid_spacing, upper_spacing, dim
+        )
+        lines = np.concatenate([lines_lower, lines_upper])
+
+        return _remove_dups(lines, self.fixed_lines[dim])
 
     def _add_lines_to_mesh(self, lines: np.array, dim: int) -> None:
         """
