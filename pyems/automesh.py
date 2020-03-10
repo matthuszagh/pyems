@@ -84,6 +84,7 @@ def _get_prim_bounds(prim: CSPrimitives):
     Get the physical boundary of a CSXCAD primitive.
     """
     orig_bounds = prim.GetBoundBox()
+    # TODO how does this handle order of transforming and positioning?
     tr = prim.GetTransform()
     orig_bounds[0] = tr.Transform(orig_bounds[0])
     orig_bounds[1] = tr.Transform(orig_bounds[1])
@@ -417,6 +418,8 @@ class Mesh:
 
         # set later
         self.bounded_types = None
+
+        self.generate_mesh()
 
     @property
     def sim(self) -> Simulation:
