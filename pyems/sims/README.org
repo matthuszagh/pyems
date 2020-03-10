@@ -1,7 +1,0 @@
-The `sims` directory contains a collection of pre-built simulations
-using the pyems API. Their main purpose is to make it possible for
-users to get commonly needed results (e.g. find the right transmission
-line width for a given characteristic impedance) without needing to
-write the simulation themselves. They provide the additional benefit
-that they serve as a collection of examples for users intending to
-write their own simulations.
