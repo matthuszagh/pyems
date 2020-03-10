@@ -203,6 +203,8 @@ def _factor_for_num(num: int, smaller_spacing: float, dist: float) -> float:
 
 def _factor_ubound(num: int, ratio: float, max_factor: float) -> float:
     """
+    Compute the maximum factor for the spacing between adjacent
+    separations.
     """
     return np.min([max_factor, np.power(ratio, 1 / (num - 1))])
 
@@ -252,43 +254,14 @@ def _geom_series(
     Compute a geometric series that specifies the spacing between a
     series of lines.
     """
-    nlower = np.max([int(np.ceil(dist / larger_spacing)) + 1, min_num])
-    nupper = np.max([int(np.ceil(dist / smaller_spacing)) + 1, min_num])
-
-    if nlower == nupper:
-        num = nlower
+    num = np.max([int(np.ceil(dist / larger_spacing)) + 1, min_num])
+    factor = _factor_for_num(num, smaller_spacing, dist)
+    while factor >= _factor_ubound(
+        num, larger_spacing / smaller_spacing, max_factor
+    ):
+        num += 1
         factor = _factor_for_num(num, smaller_spacing, dist)
-        while factor >= _factor_ubound(
-            num, larger_spacing / smaller_spacing, max_factor
-        ):
-            num += 1
-            factor = _factor_for_num(num, smaller_spacing, dist)
 
-        return (factor, num)
-
-    # nlower >= min_num and nlower < nupper
-    nums = np.arange(nlower, nupper + 1, 1)
-    factors = np.array(
-        [_factor_for_num(num, smaller_spacing, dist) for num in nums]
-    )
-    factors = np.flip(factors)  # sort factors in ascending order
-    nums = np.flip(nums)  # keep num and factor indices matched
-
-    # retrieve index s.t. factor is strictly less than max factor. we
-    # could add a condition to retrieve the max factor, if available,
-    # but it's helpful to have keep the factor below the max factor so
-    # we can move lines later (e.g. for setting probes)
-    index = bisect_left(factors, max_factor) - 1
-    if index < 0:  # all factors too large
-        factor = max_factor
-        (factor, num) = _num_for_factor(factor, smaller_spacing, dist)
-        while factor >= max_factor:
-            num += 1
-            factor = _factor_for_num(num, smaller_spacing, dist)
-        return (factor, num)
-
-    factor = factors[index]
-    num = nums[index]
     return (factor, num)
 
 
