@@ -878,8 +878,14 @@ class Microstrip(Structure):
         """
         """
         return (
-            self.box.min_corner.y - self._gnd_gap - self._via_gap,
-            self.box.max_corner.y + self._gnd_gap + self._via_gap,
+            self.box.min_corner.y
+            - (
+                self._propagation_direction() * (self._gnd_gap + self._via_gap)
+            ),
+            self.box.max_corner.y
+            + (
+                self._propagation_direction() * (self._gnd_gap + self._via_gap)
+            ),
         )
 
     def _trace_z(self) -> float:
