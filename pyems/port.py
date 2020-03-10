@@ -47,7 +47,6 @@ from pyems.coordinate import Box3, Coordinate3
 from pyems.automesh import Mesh
 from pyems.probe import Probe
 from pyems.utilities import (
-    max_priority,
     wavenumber,
     apply_transform,
     array_index,
@@ -305,6 +304,7 @@ class PlanarPort(Port):
         box: Box3,
         number: int,
         thickness: float,
+        priority: int,
         conductivity: float = 5.8e7,
         excite: bool = False,
         feed_impedance: float = None,
@@ -334,19 +334,15 @@ class PlanarPort(Port):
         Excitation feeds are placed relative to `start_corner`'s x
         position.  See `feed_shift` for the relative positioning.
 
-        :param box: A 2D list of 2 elements, where each element is an
-            inner list of 3 elements.  The 1st list is the [x,y,z]
-            components of the starting corner and the 2nd list is the
-            opposite corner.  The actual trace height is 0 and its
-            shape is given by the x and y coordinates only.  It lies
-            in the xy-plane with the z-value given by the z-component
-            in the 2nd inner list.  The z-value of the 1st list
-            corresponds to the position of the ground plane.  This is
-            used for determining the position/length of feed and
-            measurement probes.  Units are whatever you set the CSX
-            unit to, defaults to m.
+        :param sim: Simulation to which planar port is added.
+        :param box: 3D box where the xy coordinates demarcate the
+            trace and the order indicates whether the signal
+            propagation direction is in the +x or -x direction.  The
+            z-coordinate gives the distance to the ground plane and
+            the direction indicates the signal excitation direction.
         :param thickness: Metal trace thickness.  Units are whatever
             you set the CSX unit to, defaults to m.
+        :param priority: CSXCAD trace priority.
         :param conductivity: Metal conductivity (in S/m).  The default
             uses the conductivity of copper.
         :param feed_impedance: The feeding impedance value.  The
@@ -377,6 +373,7 @@ class PlanarPort(Port):
         )
         self._box = box
         self.thickness = thickness
+        self._priority = priority
         self.conductivity = conductivity
         self.feed_impedance = feed_impedance
         self.feed_shift = feed_shift
@@ -435,14 +432,14 @@ class PlanarPort(Port):
         """
         Set trace.
         """
-        # TODO fix name
         trace_prop = self._sim.csx.AddConductingSheet(
-            "trace", conductivity=self.conductivity, thickness=self.thickness,
+            "Microstrip_Trace_" + self.number,
+            conductivity=self.conductivity,
+            thickness=self.thickness,
         )
-        # TODO fix max_priority
         box = self._trace_box()
         trace_box = trace_prop.AddBox(
-            priority=max_priority(), start=box.start(), stop=box.stop(),
+            priority=self._priority, start=box.start(), stop=box.stop(),
         )
         apply_transform(trace_box, self.transform)
 
