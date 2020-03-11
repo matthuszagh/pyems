@@ -217,8 +217,8 @@ set its position. Finally, we should perform any inherited transforms
 (e.g. PCB transforms for objects on PCB).
 
 ** TODO structure construct methods should support an additional transform
-** TODO automesh should support primitive priorities
-** TODO automesh option to ignore very small structures
+** TODO mesh should support primitive priorities
+** TODO mesh option to ignore very small structures
 This is useful when your model inadvertently creates tiny structures
 (i.e. two overlapping objects are almost the same size) that would
 increase the simulation time dramatically. To not screw up mesh
@@ -231,10 +231,6 @@ I'm not confident the ports will work at all unless all rotational
 transformations are a multiple of 90deg. Maybe the easiest thing to do
 is trigger an error if the user attempts a non-90deg
 rotation. Scalings, translations, should of course be fine.
-
-** TODO mesh should combine adjacent same type shapes in same plane
-This is tricky bc they need to have the same value for the other 2
-dimensions.
 
 ** TODO ports do not require freq and sim_dir in calc args
 Can get these directly from self.sim

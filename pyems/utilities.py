@@ -248,11 +248,12 @@ def append_transform(tr1: CSTransform, tr2: CSTransform) -> CSTransform:
 
     :returns: Combined transform.
     """
-    if tr1 is None:
-        tr1 = CSTransform()
+    tr_ret = CSTransform()
+    if tr1 is not None:
+        tr_ret.SetMatrix(tr1.GetMatrix(), True)
     if tr2 is not None:
-        tr1.SetMatrix(tr2.GetMatrix(), True)
-    return tr1
+        tr_ret.SetMatrix(tr2.GetMatrix(), True)
+    return tr_ret
 
 
 def mil_to_mm(mil_val: float) -> float:
