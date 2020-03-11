@@ -44,7 +44,7 @@ import numpy as np
 from CSXCAD.CSTransform import CSTransform
 from pyems.simulation import Simulation
 from pyems.coordinate import Box3, Coordinate3
-from pyems.automesh import Mesh
+from pyems.mesh import Mesh
 from pyems.probe import Probe
 from pyems.utilities import (
     wavenumber,

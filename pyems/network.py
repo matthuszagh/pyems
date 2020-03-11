@@ -6,7 +6,7 @@ import subprocess
 import numpy as np
 from CSXCAD.CSXCAD import ContinuousStructure
 from pyems.port import Port
-from pyems.automesh import Mesh
+from pyems.mesh import Mesh
 from pyems.utilities import wavelength, get_unit
 
 

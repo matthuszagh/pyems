@@ -3,7 +3,7 @@ from CSXCAD.CSTransform import CSTransform
 import numpy as np
 from openEMS.ports import UI_data
 from pyems.simulation import Simulation
-from pyems.automesh import Mesh
+from pyems.mesh import Mesh
 from pyems.utilities import apply_transform
 from pyems.coordinate import Box3, box_overlap
 
