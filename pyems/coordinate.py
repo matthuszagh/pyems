@@ -52,6 +52,16 @@ class Coordinate2:
         """
         return self._int_to_coord(key)
 
+    def __setitem__(self, key, val):
+        """
+        """
+        if key == 0:
+            self.x = val
+        elif key == 1:
+            self.y = val
+        else:
+            raise ValueError("Invalid index.")
+
     def _int_to_coord(self, val) -> float:
         """
         """
@@ -94,6 +104,18 @@ class Coordinate3(Coordinate2):
         """
         """
         return [self._x, self._y, self._z]
+
+    def __setitem__(self, key, val):
+        """
+        """
+        if key == 0:
+            self.x = val
+        elif key == 1:
+            self.y = val
+        elif key == 2:
+            self.z = val
+        else:
+            raise ValueError("Invalid index.")
 
     def _int_to_coord(self, val):
         """

@@ -1,7 +1,7 @@
 from tempfile import mkdtemp
 import os
 import subprocess
-from pyems.simulation_beta import Simulation
+from pyems.simulation import Simulation
 from pyems.coordinate import Box3
 
 

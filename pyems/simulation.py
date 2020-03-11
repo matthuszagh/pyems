@@ -1,33 +1,13 @@
-import tempfile
+import os
+import subprocess
+import sys
 import shutil
-from pathlib import Path
 from typing import List
+from tempfile import mkdtemp
 import numpy as np
-from multiprocessing import Pool
 from openEMS import openEMS
 from CSXCAD.CSXCAD import ContinuousStructure
-from pyems.network import Network
-from pyems.field_dump import FieldDump
-from pyems.utilities import wavelength, get_unit
-
-
-def init_simulation(
-    unit: float = 1, end_criteria: float = 1e-5
-) -> (ContinuousStructure, openEMS):
-    """
-    Initialize a simulation and set the default distance dimension.
-
-    :param unit: Length dimension unit to use for all simulation
-        distances.  Defaults to 1, which is meters.  For instance,
-        1e-3 would be mm.
-    :param end_criteria: FDTD termination energy.
-
-    :returns: CSXCAD and openEMS objects
-    """
-    csx = ContinuousStructure()
-    csx.GetGrid().SetDeltaUnit(unit)
-    fdtd = openEMS(EndCriteria=end_criteria)
-    return (csx, fdtd)
+from pyems.boundary import BoundaryConditions
 
 
 class Simulation:
@@ -38,205 +18,273 @@ class Simulation:
 
     def __init__(
         self,
-        fdtd: openEMS,
-        csx: ContinuousStructure,
-        center_freq: float,
-        half_bandwidth: float,
-        boundary_conditions: List[str],
-        network: Network = None,
-        field_dumps: List[FieldDump] = None,
+        freq: np.array,
+        unit: float = 1,
+        boundary_conditions: BoundaryConditions = BoundaryConditions(
+            (("PML_8", "PML_8"), ("PML_8", "PML_8"), ("PML_8", "PML_8")),
+        ),
+        end_criteria: float = 1e-5,
+        sim_dir: str = "sim",
     ):
         """
+        :param freq: An ordered (ascending) numpy array or list of
+            frequency values to simulate.  All signal excitations will
+            be automatically set based on this value, where the middle
+            frequency value determines the center frequency of the
+            gaussian excitation and the end frequency values are the
+            -20dB values.  Additionally, the simulation timestep and
+            post-processing frequency results are both dependent on
+            this argument.  A larger number of values will increase
+            the simulation time but will also increase the frequency
+            resolution of output data.
+        :param unit: Length dimension unit to use for all simulation
+            distances.  Defaults to 1, which is meters.  For instance,
+            1e-3 would be mm.
+        :param boundary_conditions: The OpenEMS simulation boundary
+            conditions.  Corresponds to ((xmin, xmax), (ymin, ymax),
+            (zmin, zmax)).  See the OpenEMS documentation for details.
+        :param end_criteria: FDTD termination energy.
+        :param sim_dir: Directory where simulation results are stored.
+            If you pass None, a temporary directory will be used.
+            It's generally not recommended to use a temporary
+            directory since it makes it more difficult to abort the
+            simulation and to avoid rerunning unnecessary parts of the
+            simulation.
         """
-        self.fdtd = fdtd
-        self.csx = csx
-        self.fdtd.SetCSX(self.csx)
-        self.center_freq = center_freq
-        self.half_bandwidth = half_bandwidth
-        self.boundary_conditions = boundary_conditions
-        self.fdtd.SetGaussExcite(center_freq, half_bandwidth)
-        self.fdtd.SetBoundaryCond(boundary_conditions)
-        self.network = network
-        self.field_dumps = field_dumps
-
-        # set later
-        self.freq = None
-        self.sim_dir = None
-        self.nf2ff = None
-
-    def set_network(self, network: Network) -> None:
-        """
-        """
-        self.network = network
-
-    def get_network(self) -> Network:
-        return self.network
-
-    def add_field_dump(self, field_dump: FieldDump) -> None:
-        """
-        """
-        self.field_dumps.append(field_dump)
-
-    def set_field_dumps(self, field_dumps: List[FieldDump]) -> None:
-        """
-        """
-        self.field_dumps = field_dumps
-
-    def get_field_dumps(self) -> List[FieldDump]:
-        """
-        """
-        return self.field_dumps
-
-    # # TODO simulation shouldn't make call to generate mesh
-    # def finalize_structure(
-    #     self, expand_bounds: List[float], simulation_bounds: List[float] = None
-    # ) -> None:
-    #     """
-    #     """
-    #     self.network.generate_mesh(
-    #         min_wavelength=wavelength(
-    #             self.center_freq + self.half_bandwidth, get_unit(self.csx)
-    #         ),
-    #         expand_bounds=expand_bounds,
-    #         simulation_bounds=simulation_bounds,
-    #     )
-
-    def simulate(self, num_freq_bins: int = 501, nf2ff: bool = False) -> None:
-        """
-        """
-        if nf2ff:
-            non_pml_box = self._get_sim_box_exc_pml()
-            self.nf2ff = self.fdtd.CreateNF2FFBox(
-                start=non_pml_box[0], stop=non_pml_box[1]
-            )
-
-        self.freq = np.linspace(
-            self.center_freq - self.half_bandwidth,
-            self.center_freq + self.half_bandwidth,
-            num_freq_bins,
-        )
-        self.sim_dir = self._get_sim_dir()
-        self.fdtd.Run(self.sim_dir, cleanup=True)
-        self.network.calc(sim_dir=self.sim_dir, freq=self.freq)
-
-    def _get_sim_dir(self, dir_name: str = "sim", tmp: bool = False):
-        """
-        Create and return a simulation directory where simulation data
-        should be stored.
-
-        :param dir_name: Name of the directory.  Created in the
-            current directory.  This has no effect if tmp is set to
-            True.
-        :param tmp: If True, use a system temporary directory.
-
-        :returns: The simulation directory path.
-        """
-        if tmp:
-            self.sim_dir = tempfile.mkdtemp()
+        self._freq = np.array(freq)
+        self._unit = unit
+        self._csx = ContinuousStructure()
+        self._csx.GetGrid().SetDeltaUnit(self._unit)
+        self._boundary_conditions = boundary_conditions
+        self._end_criteria = end_criteria
+        if sim_dir is None:
+            self._sim_dir = mkdtemp()
         else:
-            path = Path(dir_name).resolve()
-            self.sim_dir = str(path)
-            if path.exists():
-                shutil.rmtree(dir_name)
-            path.mkdir()
-
-        return self.sim_dir
-
-    def _get_sim_box_exc_pml(self) -> np.array:
-        """
-        Return the simulation box volume excluding the PML boundaries.
-        """
-        exc_cells = np.zeros(6, dtype=int)
-        for i, bound in enumerate(self.boundary_conditions):
-            split = bound.split("_")
-            if split[0] == "PML":
-                exc_cells[i] = int(split[1]) + 1
-
-        mesh = self.network.get_mesh().mesh_lines
-        start = np.array(
-            [
-                mesh[0][exc_cells[0]],
-                mesh[1][exc_cells[2]],
-                mesh[2][exc_cells[4]],
-            ]
+            sim_dir = os.path.abspath(sim_dir)
+            if os.path.exists(sim_dir):
+                shutil.rmtree(sim_dir)
+            os.mkdir(sim_dir)
+            self._sim_dir = sim_dir
+        self._fdtd = openEMS(EndCriteria=self._end_criteria)
+        self._fdtd.SetGaussExcite(
+            self.center_frequency(), self.half_bandwidth()
         )
-        stop = np.array(
-            [
-                mesh[0][-1 - exc_cells[1]],
-                mesh[1][-1 - exc_cells[3]],
-                mesh[2][-1 - exc_cells[5]],
-            ]
-        )
-        return np.concatenate(([start], [stop]))
+        self._fdtd.SetBoundaryCond(self.boundary_conditions.as_list())
+        self._fdtd.SetCSX(self._csx)
+        self._ports = []
+        self._field_dumps = []
+        self._mesh = None
+        self._csx_path = None
+        self._nf2ff = None
 
-    def calc_nf2ff(
-        self,
-        theta: np.array = np.arange(0, 180, 1),
-        phi: np.array = np.arange(0, 360, 1),
-        radius: float = 1,
-        center: List[float] = [0, 0, 0],
-        verbose: int = 1,
-    ):
+    @property
+    def freq(self) -> np.array:
         """
-        Perform a near-field to far-field transformation and return
-        the results.
         """
-        if self.nf2ff is None:
-            raise RuntimeError(
-                "You must set nf2ff to True in simulate() in order to perform "
-                "this calculation."
-            )
-        return self.nf2ff.CalcNF2FF(
-            sim_path=self.sim_dir,
-            freq=self.center_freq,
-            theta=theta,
-            phi=phi,
-            radius=radius,
-            center=center,
-            verbose=verbose,
-        )
+        return self._freq
 
-    def get_freq(self) -> np.array:
+    @property
+    def unit(self) -> float:
         """
         """
-        return self.freq
+        return self._unit
 
-    def view_network(self) -> None:
+    @property
+    def csx(self) -> ContinuousStructure:
         """
-        View the simulation network.
         """
-        self.network.view()
+        return self._csx
 
-    def save_network(self, file_path: str) -> None:
+    @property
+    def fdtd(self) -> openEMS:
         """
-        Save the network to a file.
+        """
+        return self._fdtd
 
-        :param file_path: The path where the network should be saved.
+    @property
+    def boundary_conditions(self) -> BoundaryConditions:
         """
-        self.network.save(file_path=file_path)
+        """
+        return self._boundary_conditions
+
+    @property
+    def ports(self):
+        """
+        """
+        return self._ports
+
+    @property
+    def mesh(self):
+        """
+        """
+        return self._mesh
+
+    @property
+    def sim_dir(self):
+        """
+        """
+        return self._sim_dir
+
+    @property
+    def nf2ff(self):
+        """
+        """
+        return self._nf2ff
+
+    def run(self, csx: bool = True) -> None:
+        """
+        """
+        if csx:
+            self.view_csx(prompt=True)
+        self.fdtd.Run(self.sim_dir, cleanup=False)
+        self._calc_ports()
+
+    def view_csx(self, prompt: bool = False) -> None:
+        """
+        View the CSX network.
+
+        :param prompt: Prompt user whether to continue simulation.
+        """
+        subprocess.run(["AppCSXCAD", self._csx_path])
+        if prompt:
+            self._prompt_terminate()
 
     def view_field(self, index: int = 0) -> None:
         """
-        View a field dump.
-
-        :param index: The index of the field dump to view from the
-            list of field dumps retreived by `get_field_dumps`.  This
-            defaults to the first field dump if an index is not
-            provided.
+        View the field dump corresponding to the given index.
         """
-        self.field_dumps[index].view()
+        if index > len(self._field_dumps) - 1:
+            raise ValueError("Invalid field dump index provided.")
+        self._field_dumps[index].view()
 
-    def save_field(self, dir_path: str, index: int = 0) -> None:
+    def _prompt_terminate(self) -> None:
         """
-        Save a field dump to a file.
+        """
+        ans = input("Continue simulation (y/n)? ")
+        ans = ans.lower()
+        if ans == "n":
+            print("Terminating simulation.")
+            sys.exit(0)
+        elif ans != "y":
+            print("Please answer y/n.")
+            self._prompt_terminate()
 
-        :param file_path: Directory path in which field dumps will be
-            saved.
-        :param index: The index of the field dump in `get_field_dumps`
-            to save.  If this argument is ommitted, it defaults to the
-            first field dump.
+    def post_mesh(self):
         """
-        self.field_dumps[index].save(dir_path=dir_path)
+        Adjust the simulation for the generated mesh.
+        """
+        self._align_ports_to_mesh()
+        self.save_csx()
+        self._mesh_errors()
+
+    def _mesh_errors(self) -> None:
+        """
+        """
+        for port in self.ports:
+            if port.pml_overlap():
+                raise RuntimeError(
+                    "Probe or feed overlaps PML. Please fix your simulation. "
+                    "CSX file has been saved so you can view the overlap."
+                )
+
+    def save_csx(self, path: str = None):
+        """
+        """
+        if path is None:
+            path = self.sim_dir + "/" + self._file_name() + ".csx"
+        self.csx.Write2XML(path)
+        self._csx_path = path
+
+    def _file_name(self):
+        """
+        """
+        return os.path.splitext(os.path.basename(sys.argv[0]))[0]
+
+    def _calc_ports(self):
+        """
+        """
+        [
+            port.calc(sim_dir=self.sim_dir, freq=self.freq)
+            for port in self.ports
+        ]
+
+    def s_param(self, i: int, j: int) -> np.array:
+        """
+        Calculate the S-parameter, S_{ij}.
+
+        :param i: First subscript of S.  Must be in the range [1,
+                  num_ports]
+        :param j: Second subscript of S.  Must be in the range [1,
+                  num_ports]
+        """
+        num_ports = self._num_ports()
+        if i > num_ports or j > num_ports or i < 1 or j < 1:
+            raise ValueError(
+                "Invalid S-parameter requested. Ensure that i and j are in "
+                "the proper range for the network."
+            )
+
+        i -= 1
+        j -= 1
+        s = (
+            self.ports[i].reflected_voltage()
+            / self.ports[j].incident_voltage()
+        )
+        s = 20 * np.log10(np.abs(s))
+        return s
+
+    def _num_ports(self) -> int:
+        """
+        """
+        return len(self.ports)
+
+    def center_frequency(self) -> float:
+        """
+        """
+        idx = int(len(self.freq) / 2)
+        return self.freq[idx]
+
+    def half_bandwidth(self) -> float:
+        """
+        """
+        return self.freq[-1] - self.center_frequency()
+
+    def max_frequency(self) -> float:
+        """
+        """
+        return self.center_frequency() + self.half_bandwidth()
+
+    def add_port(self, port) -> None:
+        """
+        """
+        self._ports.append(port)
+        self._order_ports()
+
+    def add_field_dump(self, field_dump) -> None:
+        """
+        """
+        self._field_dumps.append(field_dump)
+
+    def _order_ports(self) -> None:
+        """
+        """
+        self._ports.sort(key=lambda port: port.number)
+
+    def _align_ports_to_mesh(self) -> None:
+        """
+        """
+        if self.ports is not None:
+            [port.snap_to_mesh(mesh=self.mesh) for port in self.ports]
+
+    def register_mesh(self, mesh) -> None:
+        """
+        """
+        self._mesh = mesh
+
+    def register_nf2ff(self, nf2ff) -> None:
+        """
+        """
+        self._nf2ff = nf2ff
 
 
 def sweep(sims: List[Simulation], func, processes: int = 11):

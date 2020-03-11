@@ -11,7 +11,7 @@ def pcb_prop_oshpark4():
 
 @pytest.fixture
 def sim():
-    from pyems.simulation_beta import Simulation
+    from pyems.simulation import Simulation
 
     return Simulation(freq=np.linspace(4e9, 8e9, 501), unit=1e-3)
 

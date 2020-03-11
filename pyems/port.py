@@ -42,7 +42,7 @@ from copy import deepcopy
 from abc import ABC, abstractmethod
 import numpy as np
 from CSXCAD.CSTransform import CSTransform
-from pyems.simulation_beta import Simulation
+from pyems.simulation import Simulation
 from pyems.coordinate import Box3, Coordinate3
 from pyems.automesh import Mesh
 from pyems.probe import Probe
@@ -861,8 +861,6 @@ class CPWPort(PlanarPort):
 class RectWaveguidePort(Port):
     """
     Rectangular waveguide port base class.
-
-    TODO this should probably take a reference impedance.
     """
 
     def __init__(
@@ -873,6 +871,7 @@ class RectWaveguidePort(Port):
         mode_name: str = "TE10",
         excite: bool = False,
         delay: float = 0,
+        ref_impedance: float = None,
         transform: CSTransform = None,
     ):
         """
@@ -891,6 +890,7 @@ class RectWaveguidePort(Port):
         self.mode_name = mode_name
         self.excite = excite
         self.delay = delay
+        self.ref_impedance = ref_impedance
 
         # set later
         self.te = None
@@ -925,7 +925,7 @@ class RectWaveguidePort(Port):
             bins as the ones used in the excitation.
         """
         self.freq = np.array(freq)
-        k = wavenumber(self.freq, 1)  # use m to be consistent with a,b
+        k = wavenumber(freq, 1)  # use m to be consistent with a,b
         self._calc_cutoff_wavenumber()
         self._calc_beta(k)
         self._calc_z0(k)
@@ -943,7 +943,7 @@ class RectWaveguidePort(Port):
     def add_metal_shell(self, thickness: float) -> None:
         """
         """
-        shell_prop = self._sim.AddMetal("rect_wg_metal")
+        shell_prop = self._sim.csx.AddMetal("rect_wg_metal")
         back_face = self._shell_face_box(
             const_dim=self.propagation_axis,
             const_dim_idx=0,
@@ -1002,8 +1002,8 @@ class RectWaveguidePort(Port):
             for dim in range(3)
         ]
         del dimensions[self.propagation_axis]
-        self.a = self.sim.unit * np.amax(dimensions)
-        self.b = self.sim.unit * np.amin(dimensions)
+        self.a = np.amax(dimensions)
+        self.b = np.amin(dimensions)
 
     def _parse_mode_name(self) -> None:
         """
@@ -1052,41 +1052,37 @@ class RectWaveguidePort(Port):
         else:
             name_pp = xyz[ny_p]
 
-        # TODO ???
-        unit = self.sim.unit
-        a = self.a / unit
-        b = self.b / unit
         if self.n > 0:
             self.e_func[ny_p] = "{}*cos({}*{})*sin({}*{})".format(
-                self.n / b,
-                self.m * np.pi / a,
+                self.n / self.b,
+                self.m * np.pi / self.a,
                 name_p,
-                self.n * np.pi / b,
+                self.n * np.pi / self.b,
                 name_pp,
             )
         if self.m > 0:
             self.e_func[ny_pp] = "{}*sin({}*{})*cos({}*{})".format(
-                -self.m / a,
-                self.m * np.pi / a,
+                -self.m / self.a,
+                self.m * np.pi / self.a,
                 name_p,
-                self.n * np.pi / b,
+                self.n * np.pi / self.b,
                 name_pp,
             )
 
         if self.m > 0:
             self.h_func[ny_p] = "{}*sin({}*{})*cos({}*{})".format(
-                self.m / a,
-                self.m * np.pi / a,
+                self.m / self.a,
+                self.m * np.pi / self.a,
                 name_p,
-                self.n * np.pi / b,
+                self.n * np.pi / self.b,
                 name_pp,
             )
         if self.n > 0:
             self.h_func[ny_pp] = "{}*cos({}*{})*sin({}*{})".format(
-                self.n / b,
-                self.m * np.pi / a,
+                self.n / self.b,
+                self.m * np.pi / self.a,
                 name_p,
-                self.n * np.pi / b,
+                self.n * np.pi / self.b,
                 name_pp,
             )
 
@@ -1101,6 +1097,8 @@ class RectWaveguidePort(Port):
         Calculate the characteristic impedance.
         """
         self.z0 = k * Z0 / self.beta
+        if self.ref_impedance is None:
+            self.ref_impedance = self.z0
 
     def _set_probes(self, mesh: Mesh) -> None:
         """
@@ -1110,7 +1108,7 @@ class RectWaveguidePort(Port):
             self.propagation_axis, self.box[1][self.propagation_axis]
         )
 
-        probe_box = self.box
+        probe_box = deepcopy(self.box)
         probe_box.min_corner[self.propagation_axis] = prop_pos
         probe_box.max_corner[self.propagation_axis] = prop_pos
 
@@ -1144,7 +1142,7 @@ class RectWaveguidePort(Port):
                 self.propagation_axis, self.box[0][self.propagation_axis]
             )
 
-            feed_box = self.box
+            feed_box = deepcopy(self.box)
             feed_box.min_corner[self.propagation_axis] = prop_pos
             feed_box.max_corner[self.propagation_axis] = prop_pos
 
@@ -1168,17 +1166,13 @@ class RectWaveguidePort(Port):
 
         See Pozar (4e) p.112 for derivation.
         """
+        a = self.a * self.sim.unit
+        b = self.b * self.sim.unit
         self.kc = np.sqrt(
-            np.power((self.m * np.pi / self.a), 2)
-            + np.power((self.n * np.pi / self.b), 2)
+            np.power((self.m * np.pi / a), 2)
+            + np.power((self.n * np.pi / b), 2)
         )
 
     class CoaxPort(Port):
         """
         """
-
-
-# See https://www.everythingrf.com/tech-resources/waveguides-sizes
-standard_waveguides = {
-    "WR159": {"a": np.multiply(1e-3, 40.386), "b": np.multiply(1e-3, 20.193)}
-}

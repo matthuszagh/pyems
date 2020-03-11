@@ -212,6 +212,10 @@ values as ~uf~ and the incident and reflected waves as ~inc~ and
 
 * To-Do
 ** TODO transformations should be applied before position translation
+In general, we should apply an object's own transform. Then we should
+set its position. Finally, we should perform any inherited transforms
+(e.g. PCB transforms for objects on PCB).
+
 ** TODO structure construct methods should support an additional transform
 ** TODO automesh should support primitive priorities
 ** TODO automesh option to ignore very small structures
@@ -231,3 +235,6 @@ rotation. Scalings, translations, should of course be fine.
 ** TODO mesh should combine adjacent same type shapes in same plane
 This is tricky bc they need to have the same value for the other 2
 dimensions.
+
+** TODO ports do not require freq and sim_dir in calc args
+Can get these directly from self.sim

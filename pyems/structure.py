@@ -14,8 +14,9 @@ from CSXCAD.CSPrimitives import CSPrimitives
 from pyems.pcb import PCBProperties
 from pyems.utilities import apply_transform, append_transform
 from pyems.coordinate import Coordinate2, Coordinate3, Axis, Box2, Box3
-from pyems.simulation_beta import Simulation
+from pyems.simulation import Simulation
 from pyems.port import MicrostripPort
+import pyems.calc as calc
 
 
 priorities = {
@@ -1413,3 +1414,48 @@ class SMDPassive(Structure):
             return False
         else:
             return True
+
+
+class WaveguideDimensions:
+    """
+    """
+
+    def __init__(self, a: float, b: float):
+        """
+        """
+        self._unit_set = False
+        self._a = a
+        self._b = b
+
+    @property
+    def a(self) -> float:
+        """
+        """
+        if not self._unit_set:
+            raise RuntimeError(
+                "Set waveguide unit before accessing dimensions."
+            )
+        return self._a
+
+    @property
+    def b(self) -> float:
+        """
+        """
+        if not self._unit_set:
+            raise RuntimeError(
+                "Set waveguide unit before accessing dimensions."
+            )
+        return self._b
+
+    def set_unit(self, unit: float) -> None:
+        """
+        """
+        if self._unit_set:
+            return
+        self._a /= unit
+        self._b /= unit
+        self._unit_set = True
+
+
+# See https://www.everythingrf.com/tech-resources/waveguides-sizes
+standard_waveguides = {"WR159": WaveguideDimensions(40.386e-3, 20.193e-3)}

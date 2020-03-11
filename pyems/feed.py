@@ -1,7 +1,7 @@
 from typing import List, Tuple
 import numpy as np
 from CSXCAD.CSTransform import CSTransform
-from pyems.simulation_beta import Simulation
+from pyems.simulation import Simulation
 from pyems.automesh import Mesh
 from pyems.utilities import max_priority, apply_transform
 from pyems.coordinate import Box3, box_overlap
