@@ -1,9 +1,8 @@
 from typing import List, Tuple
 import numpy as np
-from CSXCAD.CSTransform import CSTransform
 from pyems.simulation import Simulation
 from pyems.mesh import Mesh
-from pyems.utilities import max_priority, apply_transform
+from pyems.utilities import max_priority
 from pyems.coordinate import Box3, box_overlap
 
 
@@ -21,7 +20,6 @@ class Feed:
         excite_direction: List[float],
         excite_type: int = None,
         impedance: complex = None,
-        transform: CSTransform = None,
         weight_func=None,
         delay: int = 0,
     ):
@@ -38,7 +36,6 @@ class Feed:
         :param impedance: Feed impedance.  If left as None, which is
             the default, the feed will have infinite impedance.  In
             this case make sure to terminate the structure in PMLs.
-        :param transform: A transform to apply to feed.
         :param weight_func: Excitation weighting function.  See
             `SetWeightFunction`.
         :param delay: Excitation delay in seconds.
@@ -48,7 +45,6 @@ class Feed:
         self.impedance = impedance
         self.excite_direction = excite_direction
         self.excite_type = excite_type
-        self.transform = transform
         self.weight_func = weight_func
         self.delay = delay
         self.excitation_box = None
@@ -88,8 +84,6 @@ class Feed:
                 priority=max_priority(),
             )
 
-            apply_transform(self.excitation_box, self.transform)
-
         if self.impedance:
             rval, cval, lval = self._impedance_rcl()
             res = self.sim.csx.AddLumpedElement(
@@ -103,7 +97,6 @@ class Feed:
             self.res_box = res.AddBox(
                 start=self.box.start(), stop=self.box.stop()
             )
-            apply_transform(self.res_box, self.transform)
 
     def pml_overlap(self) -> bool:
         """

@@ -248,6 +248,9 @@ def append_transform(tr1: CSTransform, tr2: CSTransform) -> CSTransform:
 
     :returns: Combined transform.
     """
+    if tr1 is None and tr2 is None:
+        return None
+
     tr_ret = CSTransform()
     if tr1 is not None:
         tr_ret.SetMatrix(tr1.GetMatrix(), True)

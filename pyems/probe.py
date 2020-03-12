@@ -1,10 +1,8 @@
 from typing import List
-from CSXCAD.CSTransform import CSTransform
 import numpy as np
 from openEMS.ports import UI_data
 from pyems.simulation import Simulation
 from pyems.mesh import Mesh
-from pyems.utilities import apply_transform
 from pyems.coordinate import Box3, box_overlap
 
 
@@ -22,7 +20,6 @@ class Probe:
         box: Box3,
         p_type: int = 0,
         norm_dir: int = None,
-        transform: CSTransform = None,
         weight: float = 1,
         mode_function: List = None,
     ):
@@ -32,7 +29,6 @@ class Probe:
         self._box = box
         self.p_type = p_type
         self.norm_dir = norm_dir
-        self.transform = transform
         self.weight = weight
         self.mode_function = mode_function
         self.name = self._probe_name_prefix() + "t_" + str(self._get_ctr())
@@ -83,7 +79,6 @@ class Probe:
         self.csx_box = self.csx_probe.AddBox(
             start=self.box.start(), stop=self.box.stop()
         )
-        apply_transform(self.csx_box, self.transform)
 
     def snap_to_mesh(self, mesh) -> None:
         """
@@ -112,11 +107,13 @@ class Probe:
             self.csx_box.SetStart(start)
             self.csx_box.SetStop(stop)
 
-    def read(self, sim_dir, freq, signal_type="pulse"):
+    def read(self, signal_type="pulse"):
         """
         Read data recorded from the simulation and generate the time-
         and frequency-series data.
         """
+        freq = self.sim.freq
+        sim_dir = self.sim.sim_dir
         self.freq = freq
         data = UI_data([self.name], sim_dir, freq, signal_type)
         self.time = data.ui_time[0]

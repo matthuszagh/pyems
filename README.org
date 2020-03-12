@@ -211,26 +211,29 @@ values as ~uf~ and the incident and reflected waves as ~inc~ and
 ~ref~.
 
 * To-Do
-** TODO transformations should be applied before position translation
-In general, we should apply an object's own transform. Then we should
-set its position. Finally, we should perform any inherited transforms
-(e.g. PCB transforms for objects on PCB).
+** TODO probe should not hold onto freq
+** TODO probe get_freq_data and get_time_data
+These methods are poorly named. freq_data and time_data are better
+names. Additionally, they shouldn't pass back frequency and time
+values. This should be retreived with other methods. Note that this
+will require adjustments to port.py too.
 
-** TODO structure construct methods should support an additional transform
-** TODO mesh should support primitive priorities
-** TODO mesh option to ignore very small structures
+** TODO microstrip propagation should be able to be set
+This would allow y-direction propagation in addition to x. This would
+allow less-expensive simulations for things like bends.
+
+** TODO floating point precision errors
+Zero-dimension structures can easily be ignored because of floating
+point value changes. I think the solution is to set a precision (for
+instance see the mesh.py file). However, I'm still getting some
+ignored structures. Maybe I also need to do this when adding
+structures?
+
+** TODO coax port
+** HOLD mesh should support primitive priorities
+** HOLD mesh option to ignore very small structures
 This is useful when your model inadvertently creates tiny structures
 (i.e. two overlapping objects are almost the same size) that would
 increase the simulation time dramatically. To not screw up mesh
 generation, this will need to merge these BoundedType's with the
 adjacent (smallest?) BoundedType.
-
-** TODO coax port
-** TODO mesh port transformations
-I'm not confident the ports will work at all unless all rotational
-transformations are a multiple of 90deg. Maybe the easiest thing to do
-is trigger an error if the user attempts a non-90deg
-rotation. Scalings, translations, should of course be fine.
-
-** TODO ports do not require freq and sim_dir in calc args
-Can get these directly from self.sim

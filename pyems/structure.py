@@ -7,6 +7,7 @@ cylindrical shell, air cylinder, circular pads, etc.
 
 from abc import ABC, abstractmethod
 from typing import List, Tuple
+from copy import deepcopy
 import numpy as np
 from CSXCAD.CSTransform import CSTransform
 from CSXCAD.CSProperties import CSProperties
@@ -17,7 +18,6 @@ from pyems.coordinate import Coordinate2, Coordinate3, Axis, Box2, Box3
 from pyems.simulation import Simulation
 from pyems.port import MicrostripPort
 import pyems.calc as calc
-
 
 priorities = {
     "substrate": 0,
@@ -62,6 +62,46 @@ def construct_circle(
     return prim
 
 
+def _set_box(
+    prop: CSProperties,
+    start: List[float],
+    stop: List[float],
+    position: Coordinate3,
+    transform: CSTransform,
+    priority,
+) -> None:
+    """
+    Add a box by first constructing the box at the origin, then
+    transforming it and finally translating it for the desired
+    position.
+    """
+    box = prop.AddBox(priority=priority, start=start, stop=stop)
+    apply_transform(box, transform)
+    translate = CSTransform()
+    translate.AddTransform("Translate", position.coordinate_list())
+    apply_transform(box, translate)
+
+
+def _set_polygon(
+    prop: CSProperties,
+    points: List[List[float]],
+    elevation: float,
+    position: Coordinate3,
+    transform: CSTransform,
+    priority,
+) -> None:
+    """
+    """
+    poly = prop.AddPolygon(
+        points=points, norm_dir=2, elevation=elevation, priority=priority,
+    )
+    translate_vec = position.coordinate_list()
+    translate = CSTransform()
+    translate.AddTransform("Translate", translate_vec)
+    apply_transform(poly, transform)
+    apply_transform(poly, translate)
+
+
 class Structure(ABC):
     """
     Base class for all other structures.  Provides the capability to
@@ -70,22 +110,15 @@ class Structure(ABC):
 
     unique_index = 0
 
-    def __init__(
-        self, sim: Simulation, transform: CSTransform = None,
-    ):
+    def __init__(self, sim: Simulation):
         """
         :param sim: The Simulation to which this object will be
             added.
-        :param transform: A CSTransform object (incorporating possibly
-            multiple transformations) to apply to the structure.  This
-            will be applied before the structures position is shifted
-            to the position set by position.
         """
         self._sim = sim
-        self._transform = transform
 
     @abstractmethod
-    def construct(self, position, transform: CSTransform) -> None:
+    def construct(self, position) -> None:
         """
         Build the structure.  For each substructure this is a 3-stage
         process.  The substructure should be constructed as though the
@@ -93,6 +126,9 @@ class Structure(ABC):
         any transformations should be applied.  Finally, the structure
         should be translated to its final position.  This makes
         transformations easier to apply.
+
+        Some structures do not support transforms, in which case the
+        structure can be built directly at its final position.
         """
         pass
 
@@ -101,12 +137,6 @@ class Structure(ABC):
         """
         """
         return self._sim
-
-    @property
-    def transform(self) -> CSTransform:
-        """
-        """
-        return self._transform
 
     @classmethod
     def _get_ctr(cls):
@@ -150,7 +180,6 @@ class PCB(Structure):
         position: Coordinate3 = Coordinate3(0, 0, 0),
         layers: range = None,
         omit_copper: List[int] = [],
-        transform: CSTransform = None,
     ):
         """
         :param pcb_prop: PCBProperties object that discribes this PCB.
@@ -179,7 +208,7 @@ class PCB(Structure):
         else:
             self._layers = layers
         self._omit_copper = omit_copper
-        super().__init__(sim, transform)
+        super().__init__(sim)
 
         if self.position is not None:
             self.construct(self.position)
@@ -234,13 +263,10 @@ class PCB(Structure):
         """
         return layer_index % 2 == 0
 
-    def construct(
-        self, position: Coordinate3, transform: CSTransform = None
-    ) -> None:
+    def construct(self, position: Coordinate3) -> None:
         """
         """
         self._position = position
-        self._transform = append_transform(self._transform, transform)
         zpos = 0
         for layer in self.layers:
             zpos = self._construct_layer(zpos, layer)
@@ -268,18 +294,13 @@ class PCB(Structure):
             ),
         )
 
-        xbounds = self._centered_x_bounds()
-        ybounds = self._centered_y_bounds()
-        box = layer_prop.AddBox(
+        xbounds = self._x_bounds()
+        ybounds = self._y_bounds()
+        layer_prop.AddBox(
             priority=priorities["ground"],
             start=[xbounds[0], ybounds[0], zpos],
             stop=[xbounds[1], ybounds[1], zpos],
         )
-        apply_transform(box, self.transform)
-
-        translate = CSTransform()
-        translate.AddTransform("Translate", self._position.coordinate_list())
-        apply_transform(box, translate)
 
         return zpos
 
@@ -293,8 +314,8 @@ class PCB(Structure):
             epsilon=self.pcb_prop.epsr_at_freq(self.sim.center_frequency()),
             kappa=self.pcb_prop.kappa_at_freq(self.sim.center_frequency()),
         )
-        xbounds = self._centered_x_bounds()
-        ybounds = self._centered_y_bounds()
+        xbounds = self._x_bounds()
+        ybounds = self._y_bounds()
         zbounds = (
             zpos
             - self.pcb_prop.copper_layer_dist(
@@ -304,28 +325,29 @@ class PCB(Structure):
             ),
             zpos,
         )
-        box = layer_prop.AddBox(
+        layer_prop.AddBox(
             priority=priorities["substrate"],
             start=[xbounds[0], ybounds[0], zbounds[0]],
             stop=[xbounds[1], ybounds[1], zbounds[1]],
         )
-        apply_transform(box, self.transform)
-
-        translate = CSTransform()
-        translate.AddTransform("Translate", self._position.coordinate_list())
-        apply_transform(box, translate)
 
         return zbounds[0]
 
-    def _centered_x_bounds(self) -> Tuple[float, float]:
+    def _x_bounds(self) -> Tuple[float, float]:
         """
         """
-        return (-(self._length / 2), (self._length / 2))
+        return (
+            self.position.x - (self._length / 2),
+            self.position.x + (self._length / 2),
+        )
 
-    def _centered_y_bounds(self) -> Tuple[float, float]:
+    def _y_bounds(self) -> Tuple[float, float]:
         """
         """
-        return (-(self._width / 2), (self._width / 2))
+        return (
+            self.position.y - (self._width / 2),
+            self.position.y + (self._width / 2),
+        )
 
     def _copper_index(self, layer_index: int) -> int:
         """
@@ -362,10 +384,6 @@ class PCB(Structure):
 class Via(Structure):
     """
     Via structure.
-
-    It doesn't make sense to apply a custom transform to this.
-    However, any transform applied to the PCB will automatically be
-    applied here.
     """
 
     unique_index = 0
@@ -607,7 +625,9 @@ class Via(Structure):
 class Microstrip(Structure):
     """
     Microstrip transmission line structure.  This can also be set to
-    act as a port for later analysis.
+    act as a port for later analysis.  When used as a port, the
+    microstrip cannot be transformed, since ports do not support
+    transformations.
     """
 
     unique_index = 0
@@ -615,13 +635,18 @@ class Microstrip(Structure):
     def __init__(
         self,
         pcb: PCB,
-        box: Box2,
+        position: Coordinate2,
+        length: float,
+        width: float,
+        negative_direction: bool = False,
         trace_layer: int = 0,
         gnd_layer: int = 1,
         gnd_gap: float = None,
         via_gap: float = None,
+        terminal_gaps: bool = False,
         via: Via = None,
         via_spacing: float = None,
+        shorten_via_wall: Tuple[float, float] = (0, 0),
         port_number: int = None,
         excite: bool = False,
         feed_impedance: float = None,
@@ -633,11 +658,13 @@ class Microstrip(Structure):
         """
         :param pcb: PCB object to which the microstrip line should be
             added.
-        :param box: 2D box (x-y plane) of the microstrip trace.  The
-            z-coordinate is determined by the PCB layer.  When used as
-            a port, the order matters since the probes and signal
-            excitation will be setup to travel from the minimum x to
-            maximum x.
+        :param position: Center position of the microstrip trace.  The
+            z-coordinate is determined by the PCB layer.
+        :param length: Length of microstrip trace.
+        :param width: Width of microstrip trace.
+        :param negative_direction: Flips the port direction to point
+            in the negative x-direction.  By default, the port points
+            in the positive x-direction.
         :param trace_layer: PCB layer of the signal trace.  Uses
             copper layer index values.
         :param gnd_layer: PCB layer of the ground plane.  Uses copper
@@ -649,6 +676,8 @@ class Microstrip(Structure):
         :param via_gap: Gap distance between the start of the coplanar
             ground plane and the surrounding via fence.  If set to
             None, a via fence is not used.
+        :param terminal_gaps: Adds ground gaps to the ends of the
+            microstrip trace.
         :param via: Via object to use for the via fence.  If set to
             None and a via_gap is specified, an unbroken metal sheet
             is used to approximate the via fence.  This can reduce
@@ -659,6 +688,8 @@ class Microstrip(Structure):
         :param via_spacing: Spacing between consecutive vias in the
             via fence.  This will only have an effect if via_gap is
             specified.  In this case, a value must be provided.
+        :param shorten_via_wall: Shorten the via wall by this amount
+            at the start and end.
         :param port_number: If the microstrip line is a port, this
             specifies the port number.  If you leave this as None, the
             Microstrip line will not be treated as a port (i.e. you
@@ -676,7 +707,10 @@ class Microstrip(Structure):
             that one.
         """
         self._pcb = pcb
-        self._box = box
+        self._position = position
+        self._length = length
+        self._width = width
+        self._negative_direction = negative_direction
         self._trace_layer = trace_layer
         self._gnd_layer = gnd_layer
         self._gnd_gap = gnd_gap
@@ -684,19 +718,21 @@ class Microstrip(Structure):
             self._via_gap = None
         else:
             self._via_gap = via_gap
+        self._terminal_gaps = terminal_gaps
         self._via = via
         self._via_spacing = via_spacing
+        self._shorten_via_wall = shorten_via_wall
         self._port_number = port_number
         self._excite = excite
         self._feed_impedance = feed_impedance
         self._feed_shift = feed_shift
         self._ref_impedance = ref_impedance
         self._measurement_shift = measurement_shift
-        self._transform = append_transform(self.pcb.transform, transform)
+        self._transform = transform
         self._index = None
 
-        if self.box is not None:
-            self.construct(self.box)
+        if self.position is not None:
+            self.construct(self.position)
 
     @property
     def port_number(self) -> int:
@@ -711,22 +747,28 @@ class Microstrip(Structure):
         return self._pcb
 
     @property
-    def box(self) -> Box2:
+    def position(self) -> Coordinate2:
         """
         """
-        return self._box
+        return self._position
 
-    def trace_width(self) -> float:
+    @property
+    def transform(self) -> CSTransform:
         """
         """
-        return self.box.max_corner.y - self.box.min_corner.y
+        return self._transform
 
-    def construct(self, box: Box2) -> None:
+    def construct(
+        self, position: Coordinate2, transform: CSTransform = None
+    ) -> None:
         """
         """
-        self._box = box
+        self._position = position
+        self._transform = append_transform(self._transform, transform)
         self._index = self._get_inc_ctr()
         if self.port_number is not None:
+            if self.transform is not None:
+                raise ValueError("Ports do not support transforms.")
             self._construct_port()
         else:
             self._construct_trace()
@@ -749,7 +791,6 @@ class Microstrip(Structure):
             feed_shift=self._feed_shift,
             ref_impedance=self._ref_impedance,
             measurement_shift=self._measurement_shift,
-            transform=self.transform,
         )
 
     def _construct_trace(self) -> None:
@@ -761,14 +802,17 @@ class Microstrip(Structure):
             thickness=self.pcb.pcb_prop.copper_thickness(self._trace_layer),
         )
         trace_z = self._trace_z()
-        start = self.box.start()
-        start.append(trace_z)
-        stop = self.box.stop()
-        stop.append(trace_z)
-        box = trace_prop.AddBox(
-            priority=priorities["trace"], start=start, stop=stop
+        start = [-self._length / 2, -self._width / 2, trace_z]
+        stop = [self._length / 2, self._width / 2, trace_z]
+        pos = Coordinate3(self.position.x, self.position.y, 0)
+        _set_box(
+            prop=trace_prop,
+            start=start,
+            stop=stop,
+            position=pos,
+            transform=self.transform,
+            priority=priorities["trace"],
         )
-        apply_transform(box, self.transform)
 
     def _construct_gap(self) -> None:
         """
@@ -783,23 +827,31 @@ class Microstrip(Structure):
             kappa=self.pcb.pcb_prop.kappa_at_freq(freq),
         )
         trace_z = self._trace_z()
-        start = self.box.start()
-        start.append(trace_z)
-        stop = self.box.stop()
-        stop.append(trace_z)
-        direction = self._propagation_direction()
-        start[1] -= direction * self._gnd_gap
-        stop[1] += direction * self._gnd_gap
-        gap_box = gap_prop.AddBox(
-            priority=priorities["keepout"], start=start, stop=stop,
+        start = [-self._length / 2, -self._width / 2, trace_z]
+        stop = [self._length / 2, self._width / 2, trace_z]
+        start[1] -= self._gnd_gap
+        stop[1] += self._gnd_gap
+        if self._terminal_gaps:
+            start[0] -= self._gnd_gap
+            stop[0] += self._gnd_gap
+        pos = Coordinate3(self.position.x, self.position.y, 0)
+        _set_box(
+            prop=gap_prop,
+            start=start,
+            stop=stop,
+            position=pos,
+            transform=self.transform,
+            priority=priorities["keepout"],
         )
-        apply_transform(gap_box, self.transform)
 
     def _propagation_direction(self) -> int:
         """
         Get the direction of the signal propagation in the x-axis.
         """
-        return int(np.sign(self.box.max_corner.x - self.box.min_corner.x))
+        if self._negative_direction:
+            return -1
+        else:
+            return 1
 
     def _construct_via_fence(self) -> None:
         """
@@ -812,7 +864,11 @@ class Microstrip(Structure):
             self._construct_via_wall(ylow)
             self._construct_via_wall(yhigh)
         else:
-            # TODO ignores extra transform?
+            # TODO
+            raise RuntimeError(
+                "Vias for via fence have not yet been properly "
+                "setup for transforms."
+            )
             xmax = self.box.max_corner.x
             bound_spacing = self._via_spacing / 2
             xpos = self.box.min_corner.x + bound_spacing
@@ -832,20 +888,25 @@ class Microstrip(Structure):
             conductivity=self.pcb.pcb_prop.metal_conductivity(),
             thickness=self.pcb.pcb_prop.copper_thickness(0),
         )
-        start = self.box.start()
-        start.append(
-            self.pcb.copper_layer_elevation(self.pcb.copper_layers()[-1])
+        start = [
+            -self._length / 2 + self._shorten_via_wall[0],
+            ypos,
+            self.pcb.copper_layer_elevation(self.pcb.copper_layers()[-1]),
+        ]
+        stop = [
+            self._length / 2 - self._shorten_via_wall[1],
+            ypos,
+            self.pcb.copper_layer_elevation(self.pcb.copper_layers()[0]),
+        ]
+        pos = Coordinate3(self.position.x, self.position.y, 0)
+        _set_box(
+            prop=via_prop,
+            start=start,
+            stop=stop,
+            position=pos,
+            transform=self.transform,
+            priority=priorities["ground"],
         )
-        start[1] = ypos
-        stop = self.box.stop()
-        stop.append(
-            self.pcb.copper_layer_elevation(self.pcb.copper_layers()[0])
-        )
-        stop[1] = ypos
-        box = via_prop.AddBox(
-            priority=priorities["trace"], start=start, stop=stop
-        )
-        apply_transform(box, self.transform)
 
     def _microstrip_name(self) -> str:
         """
@@ -865,28 +926,51 @@ class Microstrip(Structure):
     def _port_box(self) -> Box3:
         """
         """
+        x_bounds = self._x_bounds()
+        y_bounds = self._y_bounds()
         box = Box3(
-            Coordinate3(
-                self.box.min_corner.x, self.box.min_corner.y, self._gnd_z()
-            ),
-            Coordinate3(
-                self.box.max_corner.x, self.box.max_corner.y, self._trace_z()
-            ),
+            Coordinate3(x_bounds[0], y_bounds[0], self._gnd_z()),
+            Coordinate3(x_bounds[1], y_bounds[1], self._trace_z()),
         )
         return box
+
+    def _x_bounds(self) -> Tuple[float, float]:
+        """
+        Minimum and maximum trace x positions.  This accounts for the
+        direction, so if the direction is negative, the minimum x will
+        be larger than the maximum x.
+        """
+        min_x = self.position.x - (
+            self._propagation_direction() * self._length / 2
+        )
+        max_x = self.position.x + (
+            self._propagation_direction() * self._length / 2
+        )
+        return (min_x, max_x)
+
+    def _y_bounds(self) -> Tuple[float, float]:
+        """
+        Minimum and maximum trace y positions.  This accounts for the
+        direction, so if the direction is negative, the minimum y will
+        be larger than the maximum y.  This shouldn't actually matter,
+        but is implemented this way for consistency with _x_bounds.
+        """
+        min_y = self.position.y - (
+            self._propagation_direction() * self._width / 2
+        )
+        max_y = self.position.y + (
+            self._propagation_direction() * self._width / 2
+        )
+        return (min_y, max_y)
 
     def _via_ypos(self) -> Tuple[float, float]:
         """
         """
         return (
-            self.box.min_corner.y
-            - (
-                self._propagation_direction() * (self._gnd_gap + self._via_gap)
-            ),
-            self.box.max_corner.y
-            + (
-                self._propagation_direction() * (self._gnd_gap + self._via_gap)
-            ),
+            -self._propagation_direction()
+            * (self._width / 2 + self._gnd_gap + self._via_gap),
+            self._propagation_direction()
+            * (self._width / 2 + self._gnd_gap + self._via_gap),
         )
 
     def _trace_z(self) -> float:
@@ -938,8 +1022,7 @@ class Taper(Structure):
         :param gap: Distance between taper and surrounding coplanar
             ground plane.  If gap is set to None, no gap is used.
             Ensure coplanar copper pour is removed if this is used.
-        :param transform: Transform applied to the taper after any PCB
-            transforms.
+        :param transform: Transform applied to taper.
         """
         self._pcb = pcb
         self._position = position
@@ -948,7 +1031,7 @@ class Taper(Structure):
         self._width2 = width2
         self._length = length
         self._gap = gap
-        self._transform = append_transform(self.pcb.transform, transform)
+        self._transform = transform
 
         if self.position is not None:
             self.construct(self.position)
@@ -964,6 +1047,12 @@ class Taper(Structure):
         """
         """
         return self._position
+
+    @property
+    def transform(self) -> CSTransform:
+        """
+        """
+        return self._transform
 
     @property
     def length(self) -> float:
@@ -1003,18 +1092,14 @@ class Taper(Structure):
         )
         pts = self._trapezoid_points(self.width1, self.width2)
         zpos = self._taper_elevation()
-        taper_box = taper_prop.AddPolygon(
+        _set_polygon(
+            prop=taper_prop,
             points=pts,
-            norm_dir=2,
             elevation=zpos,
+            position=Coordinate3(self.position.x, self.position.y, 0),
+            transform=self.transform,
             priority=priorities["trace"],
         )
-        translate_vec = self.position.coordinate_list()
-        translate_vec.append(0)
-        translate = CSTransform()
-        translate.AddTransform("Translate", translate_vec)
-        apply_transform(taper_box, self.transform)
-        apply_transform(taper_box, translate)
 
     def _construct_gap(self) -> None:
         """
@@ -1032,18 +1117,14 @@ class Taper(Structure):
             self.width1 + (2 * self._gap), self.width2 + (2 * self._gap)
         )
         zpos = self._taper_elevation()
-        gap_box = gap_prop.AddPolygon(
+        _set_polygon(
+            prop=gap_prop,
             points=pts,
-            norm_dir=2,
             elevation=zpos,
+            position=Coordinate3(self.position.x, self.position.y, 0),
+            transform=self.transform,
             priority=priorities["keepout"],
         )
-        translate_vec = self.position.coordinate_list()
-        translate_vec.append(0)
-        translate = CSTransform()
-        translate.AddTransform("Translate", translate_vec)
-        apply_transform(gap_box, self.transform)
-        apply_transform(gap_box, translate)
 
     def _trapezoid_points(
         self, width1: float, width2: float
@@ -1075,6 +1156,87 @@ class Taper(Structure):
         """
         """
         return self.pcb.copper_layer_elevation(self._pcb_layer)
+
+
+class Miter(Structure):
+    """
+    Microstrip mitered bend. Currently only supports 90degree bends.
+    """
+
+    def __init__(
+        self,
+        pcb: PCB,
+        position: Coordinate2,
+        pcb_layer: int,
+        gnd_layer: int,
+        trace_width: float,
+        gap: float,
+        miter: float = None,
+        transform: CSTransform = None,
+    ):
+        """
+        :param pcb: PCB object to which the taper is added.
+        :param position: Midpoint of the trace at which the mitered
+            corner begins.
+        :param pcb_layer: PCB copper layer on which the miter should
+            be placed.
+        :param gnd_layer: PCB copper layer of the ground plane.
+        :param trace_width: Microstrip trace width.
+        :param miter: Distance between original, unmitered corner and
+            mitered edge.  The point on the mitered edge is chosen
+            such that distance line from the original corner to the
+            new edge is perpendicular to the mitered edge.  If left as
+            None, the Douville and James optimal miter is computed.
+        :param gap: Distance between taper and surrounding coplanar
+            ground plane.  If gap is set to None, no gap is used.
+            Ensure coplanar copper pour is removed if this is used.
+        :param transform: Transform applied to miter.
+        """
+        self._pcb = pcb
+        self._position = position
+        self._pcb_layer = pcb_layer
+        self._gnd_layer = gnd_layer
+        if miter is None:
+            height = np.abs(
+                self.pcb.copper_layer_elevation(pcb_layer)
+                - self.pcb.copper_layer_elevation(gnd_layer)
+            )
+            self._miter = calc.miter(trace_width, height)
+        else:
+            self._miter = miter
+        self._gap = gap
+        self._transform = transform
+
+        if self.position is not None:
+            self.construct(self.position)
+
+    @property
+    def pcb(self) -> PCB:
+        """
+        """
+        return self._pcb
+
+    @property
+    def position(self) -> Coordinate2:
+        """
+        """
+        return self._position
+
+    @property
+    def transform(self) -> CSTransform:
+        """
+        """
+        return self._transform
+
+    def construct(
+        self, position: Coordinate2, transform: CSTransform = None
+    ) -> None:
+        """
+        """
+        self._transform = append_transform(self._transform, transform)
+        self._position = position
+        self._construct_trace()
+        self._construct_gap()
 
 
 class SMDPassiveDimensions:
@@ -1183,8 +1345,7 @@ class SMDPassive(Structure):
             proportion of length between the ends of the pads.
         :param taper: Taper the transition between the trace and SMD
             pad.  None means do not add a taper.
-        :param transform: Transform applied to the SMD after any
-            transforms applied to the PCB.
+        :param transform: Transform applied to SMD.
         """
         self._pcb = pcb
         self._position = position
@@ -1203,7 +1364,7 @@ class SMDPassive(Structure):
             pad_length + self._dimensions.length
         )
         self._taper = taper
-        self._transform = append_transform(self.pcb.transform, transform)
+        self._transform = transform
 
         if self.position is not None:
             self.construct(self.position)
@@ -1213,6 +1374,12 @@ class SMDPassive(Structure):
         """
         """
         return self._position
+
+    @property
+    def transform(self) -> CSTransform:
+        """
+        """
+        return self._transform
 
     @property
     def dimensions(self) -> SMDPassiveDimensions:
@@ -1226,9 +1393,12 @@ class SMDPassive(Structure):
         """
         return self._pcb
 
-    def construct(self, position: Coordinate2) -> None:
+    def construct(
+        self, position: Coordinate2, transform: CSTransform = None
+    ) -> None:
         """
         """
+        self._transform = append_transform(self._transform, transform)
         self._position = position
         self._construct_pads()
         self._construct_smd()
@@ -1246,19 +1416,21 @@ class SMDPassive(Structure):
         )
         zpos = self._pad_elevation()
         for pad_middle in [
-            self.position.x - (self.dimensions.length / 2),
-            self.position.x + (self.dimensions.length / 2),
+            -self.dimensions.length / 2,
+            self.dimensions.length / 2,
         ]:
             xmin = pad_middle - self._pad_length / 2
             xmax = pad_middle + self._pad_length / 2
-            ymin = self.position.y - self._pad_width / 2
-            ymax = self.position.y + self._pad_width / 2
-            pad_box = pad_prop.AddBox(
-                priority=priorities["trace"],
+            ymin = -self._pad_width / 2
+            ymax = self._pad_width / 2
+            _set_box(
+                prop=pad_prop,
                 start=[xmin, ymin, zpos],
                 stop=[xmax, ymax, zpos],
+                position=Coordinate3(self.position.x, self.position.y, 0),
+                transform=self.transform,
+                priority=priorities["trace"],
             )
-            apply_transform(pad_box, self.transform)
 
     def _construct_smd(self) -> None:
         """
@@ -1266,20 +1438,22 @@ class SMDPassive(Structure):
         smd_prop = self.pcb.sim.csx.AddLumpedElement(
             self._smd_name(), ny=0, caps=True, R=self._r, C=self._c, L=self._l
         )
-        smd_box = smd_prop.AddBox(
-            priority=priorities["trace"],
+        _set_box(
+            prop=smd_prop,
             start=[
-                self.position.x - (self.dimensions.length / 2),
-                self.position.y - (self.dimensions.width / 2),
+                -self.dimensions.length / 2,
+                -self.dimensions.width / 2,
                 self._pad_elevation(),
             ],
             stop=[
-                self.position.x + (self.dimensions.length / 2),
-                self.position.y + (self.dimensions.width / 2),
+                self.dimensions.length / 2,
+                self.dimensions.width / 2,
                 self._pad_elevation() + self.dimensions.height,
             ],
+            position=Coordinate3(self.position.x, self.position.y, 0),
+            transform=self.transform,
+            priority=priorities["trace"],
         )
-        apply_transform(smd_box, self.transform)
 
     def _construct_gap(self) -> None:
         """
@@ -1287,18 +1461,10 @@ class SMDPassive(Structure):
         if self._gap is None:
             return
 
-        xmin = (
-            self.position.x
-            - (self.dimensions.length / 2)
-            - (self._pad_length / 2)
-        )
-        xmax = (
-            self.position.x
-            + (self.dimensions.length / 2)
-            + (self._pad_length / 2)
-        )
-        ymin = self.position.y - (self.dimensions.width / 2) - self._gap
-        ymax = self.position.y + (self.dimensions.width / 2) + self._gap
+        xmin = -(self.dimensions.length / 2) - (self._pad_length / 2)
+        xmax = (self.dimensions.length / 2) + (self._pad_length / 2)
+        ymin = -(self.dimensions.width / 2) - self._gap
+        ymax = (self.dimensions.width / 2) + self._gap
         zpos = self._pad_elevation()
 
         center_freq = self.pcb.sim.center_frequency()
@@ -1307,22 +1473,24 @@ class SMDPassive(Structure):
             epsilon=self.pcb.pcb_prop.epsr_at_freq(center_freq),
             kappa=self.pcb.pcb_prop.kappa_at_freq(center_freq),
         )
-        gap_box = gap_prop.AddBox(
-            priority=priorities["keepout"],
+        _set_box(
+            prop=gap_prop,
             start=[xmin, ymin, zpos],
             stop=[xmax, ymax, zpos],
+            position=Coordinate3(self.position.x, self.position.y, 0),
+            transform=self.transform,
+            priority=priorities["keepout"],
         )
-        apply_transform(gap_box, self.transform)
 
     def _construct_cutout(self) -> None:
         """
         """
         if self._gnd_cutout_length == 0 or self._gnd_cutout_width == 0:
             return
-        xmin = self.position.x - (self._gnd_cutout_length / 2)
-        xmax = self.position.x + (self._gnd_cutout_length / 2)
-        ymin = self.position.y - (self._gnd_cutout_width / 2)
-        ymax = self.position.y + (self._gnd_cutout_width / 2)
+        xmin = -(self._gnd_cutout_length / 2)
+        xmax = self._gnd_cutout_length / 2
+        ymin = -(self._gnd_cutout_width / 2)
+        ymax = self._gnd_cutout_width / 2
         zpos = self._gnd_elevation()
 
         center_freq = self.pcb.sim.center_frequency()
@@ -1331,12 +1499,14 @@ class SMDPassive(Structure):
             epsilon=self.pcb.pcb_prop.epsr_at_freq(center_freq),
             kappa=self.pcb.pcb_prop.kappa_at_freq(center_freq),
         )
-        cutout_box = cutout_prop.AddBox(
-            priority=priorities["keepout"],
+        _set_box(
+            prop=cutout_prop,
             start=[xmin, ymin, zpos],
             stop=[xmax, ymax, zpos],
+            position=Coordinate3(self.position.x, self.position.y, 0),
+            transform=self.transform,
+            priority=priorities["keepout"],
         )
-        apply_transform(cutout_box, self.transform)
 
     def _construct_taper(self) -> None:
         """

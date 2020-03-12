@@ -8,6 +8,8 @@ from pyems.simulation import Simulation
 from pyems.utilities import wavelength
 from pyems.coordinate import Box3, Coordinate3
 
+PRECISION = 10
+
 
 class Type(Enum):
     """
@@ -79,20 +81,21 @@ def _prim_materialp(prim: CSPrimitives) -> bool:
     return False
 
 
-def _get_prim_bounds(prim: CSPrimitives):
+def _get_prim_bounds(prim: CSPrimitives) -> np.array:
     """
     Get the physical boundary of a CSXCAD primitive.
     """
     orig_bounds = prim.GetBoundBox()
-    # TODO how does this handle order of transforming and positioning?
     tr = prim.GetTransform()
-    orig_bounds[0] = tr.Transform(orig_bounds[0])
-    orig_bounds[1] = tr.Transform(orig_bounds[1])
-    bounds = [[None, None], [None, None], [None, None]]
+    orig_bounds[0] = np.array(tr.Transform(orig_bounds[0]))
+    orig_bounds[1] = np.array(tr.Transform(orig_bounds[1]))
+    bounds = np.array([[None, None], [None, None], [None, None]])
     for i in range(3):
-        upper = max(orig_bounds[0][i], orig_bounds[1][i])
-        lower = min(orig_bounds[0][i], orig_bounds[1][i])
-        bounds[i] = [lower, upper]
+        lower = np.min([orig_bounds[0][i], orig_bounds[1][i]])
+        upper = np.max([orig_bounds[0][i], orig_bounds[1][i]])
+        bounds[i] = np.array(
+            [np.around(lower, PRECISION), np.around(upper, PRECISION)]
+        )
     return bounds
 
 
@@ -146,7 +149,7 @@ def _remove_dups(lst: List[float], fixed: List[float] = []) -> List[float]:
             elif np.isclose(elt, last) and elt in fixed:
                 del new_lst[-1]
         last = elt
-        new_lst.append(elt)
+        new_lst.append(np.around(elt, PRECISION))
 
     return new_lst
 
@@ -168,8 +171,8 @@ def _bounds_from_prims(
     for prim in prims:
         prim_bounds = _get_prim_bounds(prim)
         for dim, bounds in enumerate(prim_bounds):
-            dim_bounds[dim].append(bounds[0])
-            dim_bounds[dim].append(bounds[1])
+            dim_bounds[dim].append(np.around(bounds[0], PRECISION))
+            dim_bounds[dim].append(np.around(bounds[1], PRECISION))
 
     for dim, bounds in enumerate(dim_bounds):
         dim_bounds[dim] = sorted(bounds)
@@ -1175,11 +1178,12 @@ class Mesh:
         for prim in prims:
             prim_bounds = _get_prim_bounds(prim)
             for dim in range(3):
-                if prim_bounds[dim][0] == prim_bounds[dim][1]:
-                    self.add_fixed_line(dim, prim_bounds[dim][0])
-                    # self.fixed_lines[dim].append(prim_bounds[dim][0])
+                if np.isclose(prim_bounds[dim][0], prim_bounds[dim][1]):
+                    self.add_fixed_line(
+                        dim, np.around(prim_bounds[dim][0], PRECISION)
+                    )
 
-                # self.fixed_lines[dim].sort()
+                self.fixed_lines[dim].sort()
                 self.fixed_lines[dim] = _remove_dups(self.fixed_lines[dim])
 
     def _bounded_types(

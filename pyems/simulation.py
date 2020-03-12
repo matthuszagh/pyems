@@ -203,10 +203,7 @@ class Simulation:
     def _calc_ports(self):
         """
         """
-        [
-            port.calc(sim_dir=self.sim_dir, freq=self.freq)
-            for port in self.ports
-        ]
+        [port.calc() for port in self.ports]
 
     def s_param(self, i: int, j: int) -> np.array:
         """

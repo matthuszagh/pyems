@@ -217,6 +217,29 @@ class Box2:
         """
         return self.max_corner.coordinate_list()
 
+    def center(self) -> Coordinate2:
+        """
+        """
+        return Coordinate2(
+            np.average([self.min_corner.x, self.max_corner.x]),
+            np.average([self.min_corner.y, self.max_corner.y]),
+        )
+
+    def length(self) -> float:
+        """
+        """
+        return np.abs(self.max_corner.x - self.min_corner.x)
+
+    def width(self) -> float:
+        """
+        """
+        return np.abs(self.max_corner.y - self.min_corner.y)
+
+    def negative_direction(self) -> bool:
+        """
+        """
+        return self.max_corner.x < self.min_corner.x
+
     def has_zero_dim(self) -> bool:
         """
         Return True if at least 1 dimension of the box has zero size.
@@ -336,6 +359,35 @@ class Box3:
         List object expected by OpenEMS interface.
         """
         return self.max_corner.coordinate_list()
+
+    def center(self) -> Coordinate3:
+        """
+        """
+        return Coordinate3(
+            np.average([self.min_corner.x, self.max_corner.x]),
+            np.average([self.min_corner.y, self.max_corner.y]),
+            np.average([self.min_corner.z, self.max_corner.z]),
+        )
+
+    def length(self) -> float:
+        """
+        """
+        return np.abs(self.max_corner.x - self.min_corner.x)
+
+    def width(self) -> float:
+        """
+        """
+        return np.abs(self.max_corner.y - self.min_corner.y)
+
+    def height(self) -> float:
+        """
+        """
+        return np.abs(self.max_corner.z - self.min_corner.z)
+
+    def negative_direction(self) -> bool:
+        """
+        """
+        return self.max_corner.x < self.min_corner.x
 
     def has_zero_dim(self) -> bool:
         """

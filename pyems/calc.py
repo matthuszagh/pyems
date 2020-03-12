@@ -103,3 +103,15 @@ def wheeler_z0_width(
         zm = wheeler_z0(w=width, t=t, er=er, h=h)
 
     return width
+
+
+def miter(trace_width: float, substrate_height: float) -> float:
+    """
+    Compute the optimal miter length using the Douville and James
+    equation.
+    """
+    if trace_width / substrate_height < 0.25:
+        raise ValueError(
+            "Ratio of trace width to height must be at least 0.25."
+        )
+    return 0.52 + (0.65 * np.exp(-(27 / 20) * trace_width / substrate_height))
