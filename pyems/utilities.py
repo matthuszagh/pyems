@@ -5,6 +5,7 @@ import numpy as np
 from CSXCAD.CSXCAD import ContinuousStructure
 from CSXCAD.CSPrimitives import CSPrimitives
 from CSXCAD.CSTransform import CSTransform
+from pyems.physical_constant import C0
 
 
 # TODO should set max precision instead of precision list. Precision
@@ -190,7 +191,7 @@ def max_priority() -> int:
 def speed_of_light(unit: float) -> float:
     """
     """
-    return 299792458 / unit
+    return C0 / unit
 
 
 def wavelength(freq: np.array, unit: float) -> np.array:
