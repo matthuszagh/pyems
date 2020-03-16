@@ -16,16 +16,10 @@ from pyems.pcb import PCBProperties
 from pyems.utilities import apply_transform, append_transform
 from pyems.coordinate import Coordinate2, Coordinate3, Axis, Box2, Box3
 from pyems.simulation import Simulation
-from pyems.port import MicrostripPort
+from pyems.port import MicrostripPort, CoaxPort
 import pyems.calc as calc
-
-priorities = {
-    "substrate": 0,
-    "ground": 1,
-    "keepout": 2,
-    "trace": 3,
-    "via_fill": 4,
-}
+from pyems.priority import priorities
+from pyems.material import Dielectric
 
 
 def construct_circle(
@@ -68,7 +62,7 @@ def _set_box(
     stop: List[float],
     position: Coordinate3,
     transform: CSTransform,
-    priority,
+    priority: int,
 ) -> None:
     """
     Add a box by first constructing the box at the origin, then
@@ -88,7 +82,7 @@ def _set_polygon(
     elevation: float,
     position: Coordinate3,
     transform: CSTransform,
-    priority,
+    priority: int,
 ) -> None:
     """
     """
@@ -100,6 +94,61 @@ def _set_polygon(
     translate.AddTransform("Translate", translate_vec)
     apply_transform(poly, transform)
     apply_transform(poly, translate)
+
+
+def _set_cylinder(
+    prop: CSProperties,
+    start: Coordinate3,
+    stop: Coordinate3,
+    radius: float,
+    transform: CSTransform,
+    priority: int,
+) -> None:
+    """
+    """
+    start = start.coordinate_list()
+    stop = stop.coordinate_list()
+    position = np.average([start, stop], axis=0)
+    start = np.subtract(start, position)
+    stop = np.subtract(stop, position)
+    cyl = prop.AddCylinder(
+        start=start, stop=stop, radius=radius, priority=priority
+    )
+    apply_transform(cyl, transform)
+
+    translate = CSTransform()
+    translate.AddTransform("Translate", position)
+    apply_transform(cyl, translate)
+
+
+def _set_cylindrical_shell(
+    prop: CSProperties,
+    start: Coordinate3,
+    stop: Coordinate3,
+    inner_radius: float,
+    outer_radius: float,
+    transform: CSTransform,
+    priority: int,
+) -> None:
+    """
+    """
+    start = start.coordinate_list()
+    stop = stop.coordinate_list()
+    position = np.average([start, stop], axis=0)
+    start = np.subtract(start, position)
+    stop = np.subtract(stop, position)
+    cyl = prop.AddCylindricalShell(
+        start=start,
+        stop=stop,
+        radius=np.average([inner_radius, outer_radius]),
+        shell_width=outer_radius - inner_radius,
+        priority=priority,
+    )
+    apply_transform(cyl, transform)
+
+    translate = CSTransform()
+    translate.AddTransform("Translate", position)
+    apply_transform(cyl, translate)
 
 
 class Structure(ABC):
@@ -311,8 +360,12 @@ class PCB(Structure):
         """
         layer_prop = self.sim.csx.AddMaterial(
             self._layer_name(layer_index),
-            epsilon=self.pcb_prop.epsr_at_freq(self.sim.center_frequency()),
-            kappa=self.pcb_prop.kappa_at_freq(self.sim.center_frequency()),
+            epsilon=self.pcb_prop.substrate.epsr_at_freq(
+                self.sim.center_frequency()
+            ),
+            kappa=self.pcb_prop.substrate.kappa_at_freq(
+                self.sim.center_frequency()
+            ),
         )
         xbounds = self._x_bounds()
         ybounds = self._y_bounds()
@@ -562,10 +615,10 @@ class Via(Structure):
             zpos = self.pcb.copper_layer_elevation(layer)
             antipad_prop = self.pcb.sim.csx.AddMaterial(
                 self._antipad_name(layer),
-                epsilon=self.pcb.pcb_prop.epsr_at_freq(
+                epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(
                     self.pcb.sim.center_frequency()
                 ),
-                kappa=self.pcb.pcb_prop.kappa_at_freq(
+                kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(
                     self.pcb.sim.center_frequency()
                 ),
             )
@@ -701,10 +754,7 @@ class Microstrip(Structure):
         :param feed_shift: See PlanarPort.
         :param ref_impedance: See PlanarPort.
         :param measurement_shift: See PlanarPort.
-        :param transform: CSTransform to apply to microstrip.  The
-            microstrip will automatically inherit any transformation
-            applied to the PCB.  This transform will be applied after
-            that one.
+        :param transform: CSTransform to apply to microstrip.
         """
         self._pcb = pcb
         self._position = position
@@ -784,7 +834,6 @@ class Microstrip(Structure):
             box=self._port_box(),
             number=self.port_number,
             thickness=self.pcb.pcb_prop.copper_thickness(self._trace_layer),
-            priority=priorities["trace"],
             conductivity=self.pcb.pcb_prop.metal_conductivity(),
             excite=self._excite,
             feed_impedance=self._feed_impedance,
@@ -823,8 +872,8 @@ class Microstrip(Structure):
         freq = self.pcb.sim.center_frequency()
         gap_prop = self.pcb.sim.csx.AddMaterial(
             self._gap_name(),
-            epsilon=self.pcb.pcb_prop.epsr_at_freq(freq),
-            kappa=self.pcb.pcb_prop.kappa_at_freq(freq),
+            epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(freq),
+            kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(freq),
         )
         trace_z = self._trace_z()
         start = [-self._length / 2, -self._width / 2, trace_z]
@@ -1110,8 +1159,8 @@ class Taper(Structure):
         center_freq = self.pcb.sim.center_frequency()
         gap_prop = self.pcb.sim.csx.AddMaterial(
             self._gap_name(),
-            epsilon=self.pcb.pcb_prop.epsr_at_freq(center_freq),
-            kappa=self.pcb.pcb_prop.kappa_at_freq(center_freq),
+            epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(center_freq),
+            kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(center_freq),
         )
         pts = self._trapezoid_points(
             self.width1 + (2 * self._gap), self.width2 + (2 * self._gap)
@@ -1470,8 +1519,8 @@ class SMDPassive(Structure):
         center_freq = self.pcb.sim.center_frequency()
         gap_prop = self.pcb.sim.csx.AddMaterial(
             self._gap_name(),
-            epsilon=self.pcb.pcb_prop.epsr_at_freq(center_freq),
-            kappa=self.pcb.pcb_prop.kappa_at_freq(center_freq),
+            epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(center_freq),
+            kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(center_freq),
         )
         _set_box(
             prop=gap_prop,
@@ -1496,8 +1545,8 @@ class SMDPassive(Structure):
         center_freq = self.pcb.sim.center_frequency()
         cutout_prop = self.pcb.sim.csx.AddMaterial(
             self._cutout_name(),
-            epsilon=self.pcb.pcb_prop.epsr_at_freq(center_freq),
-            kappa=self.pcb.pcb_prop.kappa_at_freq(center_freq),
+            epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(center_freq),
+            kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(center_freq),
         )
         _set_box(
             prop=cutout_prop,
@@ -1629,3 +1678,208 @@ class WaveguideDimensions:
 
 # See https://www.everythingrf.com/tech-resources/waveguides-sizes
 standard_waveguides = {"WR159": WaveguideDimensions(40.386e-3, 20.193e-3)}
+
+
+class Coax(Structure):
+    """
+    Coaxial cable structure.
+    """
+
+    unique_index = 0
+
+    def __init__(
+        self,
+        sim: Simulation,
+        position: Coordinate3,
+        length: float,
+        radius: float,
+        core_radius: float,
+        shield_thickness: float,
+        dielectric: Dielectric,
+        propagation_axis: Axis,
+        negative_direction: bool = False,
+        port_number: int = None,
+        excite: bool = False,
+        feed_impedance: float = None,
+        feed_shift: float = 0.2,
+        ref_impedance: float = None,
+        measurement_shift: float = 0.5,
+        delay: float = 0,
+        transform: CSTransform = None,
+    ):
+        """
+        :param sim: Simulation to which the coaxial cable is added.
+        :param position: Coaxial cable center.  If set to None, the
+            coaxial cable will not be immediately constructed.  In
+            this case, the cable must be manually constructed with
+            `construct`.
+        :param length: Length of cable.
+        :param radius: For a cross-section of the coaxial cable, this
+            is the distance from the center to the inside edge of the
+            outer conducting shield.
+        :param core_radius:
+        :param shield_thickness:
+        :param dielectric:
+        :param propagation_axis:
+        :param negative_direction: Flips the port direction to point
+            in the negative axis direction.  By default, the port
+            points in the positive axis direction.  Can be ignored if
+            the coaxial cable is not a port.
+        :param port_number: If the coaxial cable is a port, this
+            specifies the port number.  If you leave this as None, the
+            coaxial cable will not be treated as a port (i.e. you
+            can't use it for an excitation and can't measure values
+            with it).
+        :param excite: Set to True if the coaxial cable is a port and
+            should have an associated excitation.
+        :param feed_impedance: See CoaxPort.
+        :param feed_shift: See CoaxPort.
+        :param ref_impedance: See CoaxPort.
+        :param measurement_shift: See CoaxPort.
+        :param delay:
+        :param transform: CSTransform to apply to coaxial cable.
+        """
+        super().__init__(sim=sim)
+        self._position = position
+        self._length = length
+        self._radius = radius
+        self._core_radius = core_radius
+        self._shield_thickness = shield_thickness
+        self._dielectric = dielectric
+        self._propagation_axis = propagation_axis
+        self._negative_direction = negative_direction
+        self._port_number = port_number
+        self._excite = excite
+        self._feed_impedance = feed_impedance
+        self._feed_shift = feed_shift
+        self._ref_impedance = ref_impedance
+        self._measurement_shift = measurement_shift
+        self._delay = delay
+        self._transform = transform
+
+        self._index = None
+
+        if self._position is not None:
+            self.construct(self._position)
+
+    def construct(
+        self, position: Coordinate3, transform: CSTransform = None
+    ) -> None:
+        """
+        """
+        self._index = self._get_inc_ctr()
+        self._position = position
+        self._transform = append_transform(self._transform, transform)
+        self._construct_core()
+        self._construct_dielectric()
+        self._construct_shield()
+
+    def _construct_core(self) -> None:
+        """
+        """
+        if self._port_number is not None:
+            self._construct_port_core()
+        else:
+            self._construct_nonport_core()
+
+    def _construct_port_core(self) -> None:
+        """
+        """
+        if self._transform is not None:
+            raise ValueError("Ports do not support transforms.")
+
+        CoaxPort(
+            sim=self.sim,
+            number=self._port_number,
+            start=self._start(),
+            stop=self._stop(),
+            radius=self._radius,
+            core_radius=self._core_radius,
+            excite=self._excite,
+            feed_shift=self._feed_shift,
+            feed_impedance=self._feed_impedance,
+            measurement_shift=self._measurement_shift,
+            delay=self._delay,
+            ref_impedance=self._ref_impedance,
+        )
+
+    def _construct_nonport_core(self) -> None:
+        """
+        """
+        core_prop = self.sim.csx.AddMetal(self._core_name())
+        _set_cylinder(
+            prop=core_prop,
+            start=self._start(),
+            stop=self._stop(),
+            radius=self._core_radius,
+            transform=self._transform,
+            priority=priorities["trace"],
+        )
+
+    def _construct_dielectric(self) -> None:
+        """
+        """
+        center_freq = self.sim.center_frequency()
+        dielectric_prop = self.sim.csx.AddMaterial(
+            self._dielectric_name(),
+            epsilon=self._dielectric.epsr_at_freq(center_freq),
+            kappa=self._dielectric.kappa_at_freq(center_freq),
+        )
+        _set_cylindrical_shell(
+            prop=dielectric_prop,
+            start=self._start(),
+            stop=self._stop(),
+            inner_radius=self._core_radius,
+            outer_radius=self._radius,
+            transform=self._transform,
+            priority=priorities["substrate"],
+        )
+
+    def _construct_shield(self) -> None:
+        """
+        """
+        shield_prop = self.sim.csx.AddMetal(self._shield_name())
+        _set_cylindrical_shell(
+            prop=shield_prop,
+            start=self._start(),
+            stop=self._stop(),
+            inner_radius=self._radius,
+            outer_radius=self._radius + self._shield_thickness,
+            transform=self._transform,
+            priority=priorities["ground"],
+        )
+
+    def _start(self) -> Coordinate3:
+        """
+        """
+        prop_axis = self._propagation_axis.intval()
+        pos = [0, 0, 0]
+        pos[prop_axis] = -self._length / 2
+        if self._transform is not None:
+            pos = self._transform.Transform(pos)
+        return Coordinate3(pos[0], pos[1], pos[2])
+
+    def _stop(self) -> Coordinate3:
+        """
+        """
+        prop_axis = self._propagation_axis.intval()
+        pos = [0, 0, 0]
+        pos[prop_axis] = self._length / 2
+        if self._transform is not None:
+            pos = self._transform.Transform(pos)
+        return Coordinate3(pos[0], pos[1], pos[2])
+
+    def _core_name(self) -> str:
+        """
+        """
+        return "Coax_core_" + str(self._index)
+
+    def _dielectric_name(self) -> str:
+        """
+        """
+        return "Coax_dielectric_" + str(self._index)
+
+    def _shield_name(self) -> str:
+        """
+        """
+        return "Coax_shield_" + str(self._index)

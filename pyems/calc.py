@@ -115,3 +115,18 @@ def miter(trace_width: float, substrate_height: float) -> float:
             "Ratio of trace width to height must be at least 0.25."
         )
     return 0.52 + (0.65 * np.exp(-(27 / 20) * trace_width / substrate_height))
+
+
+def coax_core_diameter(
+    outer_diameter: float, permittivity: float, impedance: float = 50
+) -> float:
+    """
+    Approximate coaxial cable core diameter for a given target
+    characteristic impedance and outer diameter.
+
+    :returns: Inner core diameter.  The units will match those of the
+              provided outer diameter.
+    """
+    return outer_diameter / np.power(
+        10, impedance * np.sqrt(permittivity) / 138
+    )

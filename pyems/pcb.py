@@ -1,19 +1,6 @@
-from typing import List, Tuple
+from typing import List
 import numpy as np
-from pyems.utilities import (
-    sort_table_by_col,
-    table_interp_val,
-)
-
-C0 = 299792458
-MUE0 = 4e-7 * np.pi
-EPS0 = 1 / (MUE0 * (C0 ** 2))
-
-
-def loss_to_kappa(loss: float, freq: float, epsr: float) -> float:
-    """
-    """
-    return loss * EPS0 * epsr * 2 * np.pi * freq
+from pyems.material import Dielectric, common_dielectrics
 
 
 # TODO this might need to be adapted in the future to support a
@@ -25,18 +12,14 @@ class PCBProperties:
 
     def __init__(
         self,
-        substrate_epsr: List[Tuple[float, float]],
-        substrate_loss: List[Tuple[float, float]],
+        substrate: Dielectric,
         copper_thickness: List[float],
         substrate_thickness: List[float],
         metal_conductivity: float,
         via_plating_thickness: float,
     ):
         """
-        :param substrate_epsr: substrate dielectric constant.
-            dictionary of frequency (Hz) and associated dielectric.
-        :param substrate_loss: Substrate loss tangent.  Dictionary of
-            frequency (Hz) and associated loss tangent.
+        :param substrate: Substrate dielectric material.
         :param copper_thickness: thickness of each conductive layer
             (in m).  Again proceeds from top to bottom layer.
         :param substrate_thickness: separations (in m) between
@@ -47,45 +30,17 @@ class PCBProperties:
         :param via_plating_thickness: Thickness of the via plating (in
             m).
         """
-        self._substrate_epsr = sort_table_by_col(
-            np.array(substrate_epsr), col=0
-        )
-        self._substrate_loss = sort_table_by_col(
-            np.array(substrate_loss), col=0
-        )
-        self._substrate_kappa = self._kappa()
+        self._substrate = substrate
         self.copper_thick = copper_thickness
         self.substrate_thick = substrate_thickness
         self.metal_kappa = metal_conductivity
         self.via_plating_thick = via_plating_thickness
 
-    def epsr_at_freq(self, freq: float) -> float:
-        """
-        Approximate the dielectric at a given frequency given the
-        provided epsr values.
-
-        :param freq: frequency of interest (Hz)
-
-        :returns: dielectric constant
-        """
-        return float(table_interp_val(self._substrate_epsr, 1, freq, 0, True))
-
-    def kappa_at_freq(self, freq: float) -> float:
-        """
-        Approximate the substrate conductivity at a given frequency
-        given the provided epsr and loss values.
-        """
-        return float(table_interp_val(self._substrate_kappa, 1, freq, 0, True))
-
-    def _kappa(self) -> List[Tuple[float, float]]:
+    @property
+    def substrate(self) -> Dielectric:
         """
         """
-        kappas = []
-        for freq, loss in self._substrate_loss:
-            kappas.append(
-                (freq, loss_to_kappa(loss, freq, self.epsr_at_freq(freq)))
-            )
-        return kappas
+        return self._substrate
 
     def copper_thickness(self, index: int, unit: float = 1) -> float:
         """
@@ -198,20 +153,7 @@ class PCBProperties:
 # min drill size = 10mil (0.254mm)
 common_pcbs = {
     "oshpark4": PCBProperties(
-        substrate_epsr=[
-            (100e6, 3.72),
-            (1e9, 3.69),
-            (2e9, 3.68),
-            (5e9, 3.64),
-            (10e9, 3.65),
-        ],
-        substrate_loss=[
-            (100e6, 0.0072),
-            (1e9, 0.0091),
-            (2e9, 0.0092),
-            (5e9, 0.0098),
-            (10e9, 0.0095),
-        ],
+        substrate=common_dielectrics["FR408"],
         copper_thickness=[0.0356e-3, 0.0178e-3, 0.0178e-3, 0.0356e-3],
         substrate_thickness=[0.1702e-3, 1.1938e-3, 0.1702e-3],
         metal_conductivity=5.8e7,

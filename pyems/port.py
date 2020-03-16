@@ -47,6 +47,7 @@ from pyems.mesh import Mesh
 from pyems.probe import Probe
 from pyems.utilities import wavenumber, array_index
 from pyems.feed import Feed
+from pyems.priority import priorities
 
 
 C0 = 299792458  # m/s
@@ -257,117 +258,6 @@ class Port(ABC):
         else:
             self.p_ref = (1 / 2) * np.real(self.v_ref * np.conj(self.i_ref))
 
-    def _data_readp(self) -> bool:
-        """
-        Return True if data has been read from simulation result.
-        """
-        return self._data_read
-
-
-class PlanarPort(Port):
-    """
-    Base class for planar ports (e.g. microstrip, coplanar waveguide,
-    stripline, etc.).  Planar ports differ from one another in terms
-    of the number, shape and position of their feeding and measurement
-    probes.
-    """
-
-    def __init__(
-        self,
-        sim: Simulation,
-        box: Box3,
-        number: int,
-        thickness: float,
-        priority: int,
-        conductivity: float = 5.8e7,
-        excite: bool = False,
-        feed_impedance: float = None,
-        feed_shift: float = 0.2,
-        ref_impedance: float = None,
-        measurement_shift: float = 0.5,
-    ):
-        """
-        Planar port.
-
-        The shape of the planar trace is rectangular in the xy plane.
-        The first corner is determined by the x,y coordinates of
-        `start_corner` and the opposite corner is determined by the
-        x,y coordinates of `stop_corner`.  The z-position of the trace
-        is determined by the z coordinate of `stop_corner`.  The z
-        coordinate of `start_corner` gives the z position of the PCB
-        ground plane beneath the top layer.  Specifically, it
-        determines the height of the feed and measurement probes.
-
-        By default, the trace extends in length from xmin to xmax.
-        This behavior can be changed with the `rotate` parameter,
-        which will rotate the structure at an angle about the z-axis.
-        It is not currently possible to create a microstrip port that
-        is not in the xy-plane.
-
-        Excitation feeds are placed relative to `start_corner`'s x
-        position.  See `feed_shift` for the relative positioning.
-
-        :param sim: Simulation to which planar port is added.
-        :param box: 3D box where the xy coordinates demarcate the
-            trace and the order indicates whether the signal
-            propagation direction is in the +x or -x direction.  The
-            z-coordinate gives the distance to the ground plane and
-            the direction indicates the signal excitation direction.
-        :param thickness: Metal trace thickness.  Units are whatever
-            you set the CSX unit to, defaults to m.
-        :param priority: CSXCAD trace priority.
-        :param conductivity: Metal conductivity (in S/m).  The default
-            uses the conductivity of copper.
-        :param feed_impedance: The feeding impedance value.  The
-            default value of None creates an infinite impedance.  If
-            you use the default value ensure that the port is
-            terminated by a PML.  When performing a characteristic
-            impedance measurement use the default value and PML, which
-            gives better results than attempting to use a matching
-            impedance.
-        :param feed_shift: The amount by which to shift the feed as a
-            fraction of the total port length.  The final position
-            will be influenced by this value but adjusted for the mesh
-            used.
-        :param ref_impedance: The impedance used to calculate the port
-            voltage and current values.  If left as the default value
-            of None, the calculated characteristic impedance is used
-            to calculate these values.
-        :param measurement_shift: The amount by which to shift the
-            measurement probes as a fraction of the total port length.
-            By default, the measurement port is placed halfway between
-            the start and stop.  Like `feed_shift`, the final position
-            will be adjusted for the mesh used.  This is important
-            since voltage probes need to lie on mesh lines and current
-            probes need to be placed equidistant between them.
-        """
-        super().__init__(sim=sim, number=number, excite=excite)
-        self._box = box
-        self.thickness = thickness
-        self._priority = priority
-        self.conductivity = conductivity
-        self.feed_impedance = feed_impedance
-        self.feed_shift = feed_shift
-        self._ref_impedance = ref_impedance
-        self.measurement_shift = measurement_shift
-
-        self._set_trace()
-
-    @property
-    def box(self) -> Box3:
-        """
-        """
-        return self._box
-
-    @abstractmethod
-    def calc(self) -> None:
-        pass
-
-    def get_feed_shift(self) -> float:
-        """
-        """
-        return self.feed_shift
-
     def _calc_beta(self, v, i, dv, di) -> None:
         """
         Calculate the transmission line propagation constant.
@@ -398,54 +288,6 @@ class PlanarPort(Port):
         self.z0 = np.sqrt(v * dv / (i * di))
         if self._ref_impedance is None:
             self._ref_impedance = self.z0
-
-    def _set_trace(self) -> None:
-        """
-        Set trace.
-        """
-        trace_prop = self._sim.csx.AddConductingSheet(
-            "Microstrip_Trace_" + str(self.number),
-            conductivity=self.conductivity,
-            thickness=self.thickness,
-        )
-        box = self._trace_box()
-        trace_prop.AddBox(
-            priority=self._priority, start=box.start(), stop=box.stop(),
-        )
-
-    def _trace_box(self) -> Box3:
-        """
-        Get the trace box.
-        """
-        trace_box = deepcopy(self.box)
-        trace_box.min_corner.z = self.box.max_corner.z
-        return trace_box
-
-    def _propagation_direction(self) -> int:
-        """
-        Get the direction of the signal propagation in the x-axis.
-        """
-        return int(np.sign(self.box.max_corner.x - self.box.min_corner.x))
-
-    def _excitation_direction(self) -> int:
-        """
-        Get the direction of the signal excitation in the z-axis.
-        """
-        return int(np.sign(self.box.max_corner.z - self.box.min_corner.z))
-
-    @abstractmethod
-    def _set_probes(self, mesh: Mesh) -> None:
-        pass
-
-    @abstractmethod
-    def _set_feed(self, mesh: Mesh) -> None:
-        pass
-
-
-class MicrostripPort(PlanarPort):
-    """
-    Microstrip transmission line port.
-    """
 
     def calc(self) -> None:
         """
@@ -489,6 +331,162 @@ class MicrostripPort(PlanarPort):
         self._calc_i_ref(v, i)
         self._calc_p_inc()
         self._calc_p_ref()
+
+    def _data_readp(self) -> bool:
+        """
+        Return True if data has been read from simulation result.
+        """
+        return self._data_read
+
+
+class PlanarPort(Port):
+    """
+    Base class for planar ports (e.g. microstrip, coplanar waveguide,
+    stripline, etc.).  Planar ports differ from one another in terms
+    of the number, shape and position of their feeding and measurement
+    probes.
+    """
+
+    def __init__(
+        self,
+        sim: Simulation,
+        box: Box3,
+        number: int,
+        thickness: float,
+        conductivity: float = 5.8e7,
+        excite: bool = False,
+        feed_impedance: float = None,
+        feed_shift: float = 0.2,
+        ref_impedance: float = None,
+        measurement_shift: float = 0.5,
+    ):
+        """
+        Planar port.
+
+        The shape of the planar trace is rectangular in the xy plane.
+        The first corner is determined by the x,y coordinates of
+        `start_corner` and the opposite corner is determined by the
+        x,y coordinates of `stop_corner`.  The z-position of the trace
+        is determined by the z coordinate of `stop_corner`.  The z
+        coordinate of `start_corner` gives the z position of the PCB
+        ground plane beneath the top layer.  Specifically, it
+        determines the height of the feed and measurement probes.
+
+        By default, the trace extends in length from xmin to xmax.
+        This behavior can be changed with the `rotate` parameter,
+        which will rotate the structure at an angle about the z-axis.
+        It is not currently possible to create a microstrip port that
+        is not in the xy-plane.
+
+        Excitation feeds are placed relative to `start_corner`'s x
+        position.  See `feed_shift` for the relative positioning.
+
+        :param sim: Simulation to which planar port is added.
+        :param box: 3D box where the xy coordinates demarcate the
+            trace and the order indicates whether the signal
+            propagation direction is in the +x or -x direction.  The
+            z-coordinate gives the distance to the ground plane and
+            the direction indicates the signal excitation direction.
+        :param thickness: Metal trace thickness.  Units are whatever
+            you set the CSX unit to, defaults to m.
+        :param conductivity: Metal conductivity (in S/m).  The default
+            uses the conductivity of copper.
+        :param feed_impedance: The feeding impedance value.  The
+            default value of None creates an infinite impedance.  If
+            you use the default value ensure that the port is
+            terminated by a PML.  When performing a characteristic
+            impedance measurement use the default value and PML, which
+            gives better results than attempting to use a matching
+            impedance.
+        :param feed_shift: The amount by which to shift the feed as a
+            fraction of the total port length.  The final position
+            will be influenced by this value but adjusted for the mesh
+            used.
+        :param ref_impedance: The impedance used to calculate the port
+            voltage and current values.  If left as the default value
+            of None, the calculated characteristic impedance is used
+            to calculate these values.
+        :param measurement_shift: The amount by which to shift the
+            measurement probes as a fraction of the total port length.
+            By default, the measurement port is placed halfway between
+            the start and stop.  Like `feed_shift`, the final position
+            will be adjusted for the mesh used.  This is important
+            since voltage probes need to lie on mesh lines and current
+            probes need to be placed equidistant between them.
+        """
+        super().__init__(sim=sim, number=number, excite=excite)
+        self._box = box
+        self.thickness = thickness
+        self.conductivity = conductivity
+        self.feed_impedance = feed_impedance
+        self.feed_shift = feed_shift
+        self._ref_impedance = ref_impedance
+        self.measurement_shift = measurement_shift
+
+        self._set_trace()
+
+    @property
+    def box(self) -> Box3:
+        """
+        """
+        return self._box
+
+    @abstractmethod
+    def calc(self) -> None:
+        pass
+
+    def get_feed_shift(self) -> float:
+        """
+        """
+        return self.feed_shift
+
+    def _set_trace(self) -> None:
+        """
+        Set trace.
+        """
+        trace_prop = self._sim.csx.AddConductingSheet(
+            "Microstrip_Trace_" + str(self.number),
+            conductivity=self.conductivity,
+            thickness=self.thickness,
+        )
+        box = self._trace_box()
+        trace_prop.AddBox(
+            priority=priorities["trace"], start=box.start(), stop=box.stop(),
+        )
+
+    def _trace_box(self) -> Box3:
+        """
+        Get the trace box.
+        """
+        trace_box = deepcopy(self.box)
+        trace_box.min_corner.z = self.box.max_corner.z
+        return trace_box
+
+    def _propagation_direction(self) -> int:
+        """
+        Get the direction of the signal propagation in the x-axis.
+        """
+        return int(np.sign(self.box.max_corner.x - self.box.min_corner.x))
+
+    def _excitation_direction(self) -> int:
+        """
+        Get the direction of the signal excitation in the z-axis.
+        """
+        return int(np.sign(self.box.max_corner.z - self.box.min_corner.z))
+
+    @abstractmethod
+    def _set_probes(self, mesh: Mesh) -> None:
+        pass
+
+    @abstractmethod
+    def _set_feed(self, mesh: Mesh) -> None:
+        pass
+
+
+class MicrostripPort(PlanarPort):
+    """
+    Microstrip transmission line port.
+    """
 
     def _set_feed(self, mesh: Mesh) -> None:
         """
@@ -602,6 +600,10 @@ class CPWPort(PlanarPort):
         :param gap: Gap between adjacent ground planes and trace (in m).
         """
         self.gap = gap
+        raise RuntimeError(
+            "CPWPort is not correctly implemented. "
+            "See MicrostripPort for guidance on how to implement correctly."
+        )
         super().__init__(
             sim=sim,
             box=box,
@@ -1120,27 +1122,37 @@ class CoaxPort(Port):
     def __init__(
         self,
         sim: Simulation,
-        start_pos: float,
-        stop_pos: float,
+        number: int,
+        start: Coordinate3,
+        stop: Coordinate3,
         radius: float,
-        propagation_axis: Axis,
+        core_radius: float,
         excite: bool = False,
         feed_shift: float = 0.2,
+        feed_impedance: float = None,
         measurement_shift: float = 0.5,
         delay: float = 0,
         ref_impedance: float = None,
     ):
         """
-        :param start_pos: Starting position of the coaxial port in the
-            dimension given by propagation_axis.
-        :param stop_pos: Ending position of the coaxial port in the
-            dimension given by propagation_axis.
+        :param start: Starting position of the coaxial port at its
+            radial center.
+        :param stop: Ending position of the coaxial port at its radial
+            center.  `start` and `stop` can only differ in one
+            dimension.
         :param radius: Distance between center and outer conductor for
             a cross section of the coaxial cable.
-        :param propagation_axis: Axis of signal propagation.
+        :param core_radius: Radius of the inner copper core.
         :param excite: If True, add an excitation to the port.
         :param feed_shift: Offsets feed from starting position.  Given
             as a proportion of the total length.
+        :param feed_impedance: The feeding impedance value.  The
+            default value of None creates an infinite impedance.  If
+            you use the default value ensure that the port is
+            terminated by a PML.  When performing a characteristic
+            impedance measurement use the default value and PML, which
+            gives better results than attempting to use a matching
+            impedance.
         :param measurement_shift: Measurement probes offset.  Given as
             a proportion of the total length.
         :param delay:
@@ -1148,13 +1160,181 @@ class CoaxPort(Port):
             parameters.  This does not affect the calculated
             characteristic impedance.
         """
-        super().__init__(sim, excite)
-        self._start_pos = start_pos
-        self._stop_pos = stop_pos
+        super().__init__(sim=sim, number=number, excite=excite)
+        self._start = start
+        self._stop = stop
+        self._check_start_stop()
         self._radius = radius
-        self._propagation_axis = propagation_axis
+        self._core_radius = core_radius
         self._excite = excite
         self._feed_shift = feed_shift
+        self._feed_impedance = feed_impedance
         self._measurement_shift = measurement_shift
         self._delay = delay
         self._ref_impedance = ref_impedance
+
+        self._set_core()
+
+    def _check_start_stop(self) -> None:
+        """
+        """
+        diff = np.diff(
+            [self._stop.coordinate_list(), self._start.coordinate_list()],
+            axis=0,
+        )
+        if np.count_nonzero(diff) != 1:
+            raise ValueError("Invalid start and stop coordinates.")
+
+    def _set_core(self) -> None:
+        """
+        """
+        core_prop = self.sim.csx.AddMetal(self._core_name())
+        core_prop.AddCylinder(
+            start=self._start.coordinate_list(),
+            stop=self._stop.coordinate_list(),
+            radius=self._core_radius,
+            priority=priorities["trace"],
+        )
+
+    def _propagation_axis(self) -> Axis:
+        """
+        """
+        diff = np.diff(
+            [self._stop.coordinate_list(), self._start.coordinate_list()],
+            axis=0,
+        )[0]
+        for i in range(3):
+            if diff[i] != 0:
+                return Axis(i)
+
+    def _direction(self) -> int:
+        """
+        +1 for positive direction in propagation axis direction and -1
+        for negative direction.
+        """
+        axis_int = self._propagation_axis().intval()
+        return int(np.sign(self._stop[axis_int] - self._start[axis_int]))
+
+    def _core_name(self) -> str:
+        """
+        """
+        return "Coax_core_" + str(self.number)
+
+    def _set_probes(self, mesh: Mesh) -> None:
+        """
+        Set measurement probes.
+        """
+        prop_axis = self._propagation_axis().intval()
+        pos = (
+            self._direction()
+            * self._measurement_shift
+            * (self._stop[prop_axis] - self._start[prop_axis])
+        ) + self._start[prop_axis]
+        mid_idx, mid_pos = mesh.nearest_mesh_line(prop_axis, pos)
+        mesh.set_lines_equidistant(prop_axis, mid_idx - 1, mid_idx + 1)
+        low_idx = mid_idx - self._direction()
+        high_idx = mid_idx + self._direction()
+
+        vlow = mesh.get_mesh_line(prop_axis, low_idx)
+        vmid = mesh.get_mesh_line(prop_axis, mid_idx)
+        vhigh = mesh.get_mesh_line(prop_axis, high_idx)
+        vpos = [vlow, vmid, vhigh]
+
+        ilow = np.average([vlow, vmid])
+        ihigh = np.average([vmid, vhigh])
+        ipos = [ilow, ihigh]
+
+        for pos in vpos:
+            box = Box3(
+                Coordinate3(None, None, None), Coordinate3(None, None, None)
+            )
+            box.min_corner[prop_axis] = pos
+            box.max_corner[prop_axis] = pos
+
+            other_axis1 = (prop_axis + 1) % 3
+            box.min_corner[other_axis1] = (
+                self._start[other_axis1] - self._radius
+            )
+            box.max_corner[other_axis1] = self._start[other_axis1]
+
+            other_axis2 = (prop_axis + 2) % 3
+            box.min_corner[other_axis2] = self._start[other_axis2]
+            box.max_corner[other_axis2] = self._start[other_axis2]
+            self.vprobes.append(
+                Probe(sim=self.sim, box=box, p_type=0, weight=1)
+            )
+
+        for pos in ipos:
+            box = Box3(
+                Coordinate3(None, None, None), Coordinate3(None, None, None)
+            )
+            box.min_corner[prop_axis] = pos
+            box.max_corner[prop_axis] = pos
+
+            other_axis1 = (prop_axis + 1) % 3
+            box.min_corner[other_axis1] = (
+                self._start[other_axis1] - self._core_radius
+            )
+            box.max_corner[other_axis1] = (
+                self._start[other_axis1] + self._core_radius
+            )
+
+            other_axis2 = (prop_axis + 2) % 3
+            box.min_corner[other_axis2] = (
+                self._start[other_axis2] - self._core_radius
+            )
+            box.max_corner[other_axis2] = (
+                self._start[other_axis2] + self._core_radius
+            )
+            self.iprobes.append(
+                Probe(
+                    sim=self.sim,
+                    box=box,
+                    p_type=1,
+                    norm_dir=prop_axis,
+                    weight=-self._direction(),  # TODO negative??
+                )
+            )
+
+    def _set_feed(self, mesh: Mesh) -> None:
+        """
+        Set excitation feed.
+        """
+        if self._excite:
+            excite_type = 0
+        else:
+            excite_type = None
+
+        prop_axis = self._propagation_axis().intval()
+        pos = (
+            self._direction()
+            * self._feed_shift
+            * (self._stop[prop_axis] - self._start[prop_axis])
+        ) + self._start[prop_axis]
+        _, feed_pos = mesh.nearest_mesh_line(prop_axis, pos)
+
+        box = Box3(
+            Coordinate3(None, None, None), Coordinate3(None, None, None)
+        )
+        box.min_corner[prop_axis] = feed_pos
+        box.max_corner[prop_axis] = feed_pos
+
+        other_axis1 = (prop_axis + 1) % 3
+        box.min_corner[other_axis1] = self._start[other_axis1] - self._radius
+        box.max_corner[other_axis1] = self._start[other_axis1]
+
+        other_axis2 = (prop_axis + 2) % 3
+        box.min_corner[other_axis2] = self._start[other_axis2]
+        box.max_corner[other_axis2] = self._start[other_axis2]
+
+        excite_direction = [0, 0, 0]
+        excite_direction[other_axis1] = 1
+        feed = Feed(
+            sim=self.sim,
+            box=box,
+            excite_direction=excite_direction,
+            excite_type=excite_type,
+            impedance=self._feed_impedance,
+            delay=self._delay,
+        )
+        self.feeds.append(feed)
