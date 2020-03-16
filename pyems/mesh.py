@@ -86,6 +86,7 @@ def _get_prim_bounds(prim: CSPrimitives) -> np.array:
     Get the physical boundary of a CSXCAD primitive.
     """
     orig_bounds = prim.GetBoundBox()
+    # transforms do not affect the bound box, so we must do it manually.
     tr = prim.GetTransform()
     orig_bounds[0] = np.array(tr.Transform(orig_bounds[0]))
     orig_bounds[1] = np.array(tr.Transform(orig_bounds[1]))
@@ -673,7 +674,7 @@ class Mesh:
         """
         """
         for btype in self.bounded_types[dim]:
-            if btype.get_bounds()[1] == lower:
+            if btype.get_bounds()[1] == lower and btype.size() != 0:
                 return self._pos_meshed(dim, btype.get_midpoint())
 
     def nearest_mesh_line(self, dim: int, pos: float) -> (int, float):
@@ -1034,19 +1035,20 @@ class Mesh:
         lower_spacing: float,
         upper_spacing: float,
         dim: int,
+        min_lines: int,
     ) -> np.array:
         """
         """
         if np.isclose(lower_spacing, upper_spacing):
             num_lines = int(np.ceil((upper - lower) / lower_spacing)) + 1
-            num_lines = int(np.max([num_lines, self.min_lines]))
+            num_lines = int(np.max([num_lines, min_lines]))
             return np.linspace(lower, upper, num_lines)
 
         (factor, num_lines) = _geom_series(
             smaller_spacing=np.min([lower_spacing, upper_spacing]),
             larger_spacing=np.max([lower_spacing, upper_spacing]),
             dist=upper - lower,
-            min_num=self.min_lines,
+            min_num=min_lines,
             max_factor=self.smooth[dim],
         )
 
@@ -1085,7 +1087,7 @@ class Mesh:
             < larger_spacing
         ):
             return self._lines_const_factor_in_bounds(
-                lower, upper, lower_spacing, upper_spacing, dim
+                lower, upper, lower_spacing, upper_spacing, dim, self.min_lines
             )
 
         mid_spacing_dist = _dist_for_max_spacings(
@@ -1105,11 +1107,16 @@ class Mesh:
                 upper_spacing * (upper_factor ** upper_num),
             ]
         )
+
+        while lower_num + upper_num < self.min_lines:
+            lower_num += 1
+            upper_num += 1
+
         lines_lower = self._lines_const_factor_in_bounds(
-            lower, midpt, lower_spacing, mid_spacing, dim
+            lower, midpt, lower_spacing, mid_spacing, dim, lower_num
         )
         lines_upper = self._lines_const_factor_in_bounds(
-            midpt, upper, mid_spacing, upper_spacing, dim
+            midpt, upper, mid_spacing, upper_spacing, dim, upper_num
         )
         lines = np.concatenate([lines_lower, lines_upper])
 
