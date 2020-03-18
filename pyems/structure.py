@@ -691,12 +691,12 @@ class Microstrip(Structure):
         position: Coordinate2,
         length: float,
         width: float,
-        negative_direction: bool = False,
+        propagation_axis: Axis,
         trace_layer: int = 0,
         gnd_layer: int = 1,
         gnd_gap: float = None,
         via_gap: float = None,
-        terminal_gaps: bool = False,
+        terminal_gaps: Tuple[bool] = (False, False),
         via: Via = None,
         via_spacing: float = None,
         shorten_via_wall: Tuple[float, float] = (0, 0),
@@ -715,9 +715,10 @@ class Microstrip(Structure):
             z-coordinate is determined by the PCB layer.
         :param length: Length of microstrip trace.
         :param width: Width of microstrip trace.
-        :param negative_direction: Flips the port direction to point
-            in the negative x-direction.  By default, the port points
-            in the positive x-direction.
+        :param propagation_axis: Axis and direction of signal
+            propagation.  This determines the microstrip trace
+            direction and sets the signal feed and probes correctly
+            for a port.
         :param trace_layer: PCB layer of the signal trace.  Uses
             copper layer index values.
         :param gnd_layer: PCB layer of the ground plane.  Uses copper
@@ -730,7 +731,9 @@ class Microstrip(Structure):
             ground plane and the surrounding via fence.  If set to
             None, a via fence is not used.
         :param terminal_gaps: Adds ground gaps to the ends of the
-            microstrip trace.
+            microstrip trace.  Provided as a tuple of 2 booleans,
+            indicating whether to add gaps to the start and stop of
+            the microstrip, respectively.
         :param via: Via object to use for the via fence.  If set to
             None and a via_gap is specified, an unbroken metal sheet
             is used to approximate the via fence.  This can reduce
@@ -760,7 +763,8 @@ class Microstrip(Structure):
         self._position = position
         self._length = length
         self._width = width
-        self._negative_direction = negative_direction
+        self._propagation_axis = propagation_axis
+        self._check_propagation_axis()
         self._trace_layer = trace_layer
         self._gnd_layer = gnd_layer
         self._gnd_gap = gnd_gap
@@ -832,6 +836,8 @@ class Microstrip(Structure):
         MicrostripPort(
             sim=self.pcb.sim,
             box=self._port_box(),
+            propagation_axis=self._propagation_axis,
+            excitation_axis=self._excitation_axis(),
             number=self.port_number,
             thickness=self.pcb.pcb_prop.copper_thickness(self._trace_layer),
             conductivity=self.pcb.pcb_prop.metal_conductivity(),
@@ -851,8 +857,16 @@ class Microstrip(Structure):
             thickness=self.pcb.pcb_prop.copper_thickness(self._trace_layer),
         )
         trace_z = self._trace_z()
-        start = [-self._length / 2, -self._width / 2, trace_z]
-        stop = [self._length / 2, self._width / 2, trace_z]
+        prop_axis = self._propagation_axis.axis
+        perp_axis = self._trace_perpendicular_axis().axis
+
+        start = [0, 0, trace_z]
+        stop = [0, 0, trace_z]
+        start[prop_axis] = -self._length / 2
+        stop[prop_axis] = self._length / 2
+        start[perp_axis] = -self._width / 2
+        stop[perp_axis] = self._width / 2
+
         pos = Coordinate3(self.position.x, self.position.y, 0)
         _set_box(
             prop=trace_prop,
@@ -876,13 +890,28 @@ class Microstrip(Structure):
             kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(freq),
         )
         trace_z = self._trace_z()
-        start = [-self._length / 2, -self._width / 2, trace_z]
-        stop = [self._length / 2, self._width / 2, trace_z]
-        start[1] -= self._gnd_gap
-        stop[1] += self._gnd_gap
-        if self._terminal_gaps:
-            start[0] -= self._gnd_gap
-            stop[0] += self._gnd_gap
+        prop_axis = self._propagation_axis.axis
+        perp_axis = self._trace_perpendicular_axis().axis
+
+        start = [0, 0, trace_z]
+        stop = [0, 0, trace_z]
+        start[prop_axis] = -self._length / 2
+        stop[prop_axis] = self._length / 2
+        start[perp_axis] = -self._width / 2
+        stop[perp_axis] = self._width / 2
+
+        start[perp_axis] -= self._gnd_gap
+        stop[perp_axis] += self._gnd_gap
+        if self._terminal_gaps[0]:
+            if self._propagation_axis.is_positive_direction():
+                start[prop_axis] -= self._gnd_gap
+            else:
+                stop[prop_axis] += self._gnd_gap
+        if self._terminal_gaps[1]:
+            if self._propagation_axis.is_positive_direction():
+                stop[prop_axis] += self._gnd_gap
+            else:
+                start[prop_axis] -= self._gnd_gap
         pos = Coordinate3(self.position.x, self.position.y, 0)
         _set_box(
             prop=gap_prop,
@@ -893,43 +922,42 @@ class Microstrip(Structure):
             priority=priorities["keepout"],
         )
 
-    def _propagation_direction(self) -> int:
-        """
-        Get the direction of the signal propagation in the x-axis.
-        """
-        if self._negative_direction:
-            return -1
-        else:
-            return 1
-
     def _construct_via_fence(self) -> None:
         """
         """
         if self._via_gap is None:
             return
 
-        ylow, yhigh = self._via_ypos()
+        perp_low, perp_high = self._via_perp_pos()
         if self._via is None:
-            self._construct_via_wall(ylow)
-            self._construct_via_wall(yhigh)
+            self._construct_via_wall(perp_low)
+            self._construct_via_wall(perp_high)
         else:
             # TODO
             raise RuntimeError(
                 "Vias for via fence have not yet been properly "
                 "setup for transforms."
             )
-            xmax = self.box.max_corner.x
+            prop_axis = self._propagation_axis.axis
+            perp_axis = self._trace_perpendicular_axis().axis
+            prop_max = self.box.max_corner[prop_axis]
             bound_spacing = self._via_spacing / 2
-            xpos = self.box.min_corner.x + bound_spacing
+            prop_pos = self.box.min_corner[prop_axis] + bound_spacing
             via_rad = self._via.pad_radius()
-            while xpos + via_rad < xmax:
-                pos_low = Coordinate2(xpos, ylow)
-                pos_high = Coordinate2(xpos, yhigh)
+            while prop_pos + via_rad < prop_max:
+                pos_low = Coordinate2(None, None)
+                pos_low[prop_axis] = prop_pos
+                pos_low[perp_axis] = perp_low
+
+                pos_high = Coordinate2(None, None)
+                pos_high[prop_axis] = prop_pos
+                pos_high[perp_axis] = perp_high
+
                 self._via.construct(pos_low)
                 self._via.construct(pos_high)
-                xpos += self._via_spacing
+                prop_pos += self._via_spacing
 
-    def _construct_via_wall(self, ypos: float) -> None:
+    def _construct_via_wall(self, perp_pos: float) -> None:
         """
         """
         via_prop = self.pcb.sim.csx.AddConductingSheet(
@@ -937,16 +965,25 @@ class Microstrip(Structure):
             conductivity=self.pcb.pcb_prop.metal_conductivity(),
             thickness=self.pcb.pcb_prop.copper_thickness(0),
         )
+
+        prop_axis = self._propagation_axis.axis
+        perp_axis = self._trace_perpendicular_axis().axis
         start = [
-            -self._length / 2 + self._shorten_via_wall[0],
-            ypos,
+            None,
+            None,
             self.pcb.copper_layer_elevation(self.pcb.copper_layers()[-1]),
         ]
+        start[prop_axis] = -self._length / 2 + self._shorten_via_wall[0]
+        start[perp_axis] = perp_pos
+
         stop = [
-            self._length / 2 - self._shorten_via_wall[1],
-            ypos,
+            None,
+            None,
             self.pcb.copper_layer_elevation(self.pcb.copper_layers()[0]),
         ]
+        stop[prop_axis] = self._length / 2 - self._shorten_via_wall[1]
+        stop[perp_axis] = perp_pos
+
         pos = Coordinate3(self.position.x, self.position.y, 0)
         _set_box(
             prop=via_prop,
@@ -956,6 +993,27 @@ class Microstrip(Structure):
             transform=self.transform,
             priority=priorities["ground"],
         )
+
+    def _check_propagation_axis(self) -> None:
+        """
+        """
+        if self._propagation_axis.axis == 2:
+            raise ValueError(
+                "Invalid propagation axis. Must be in either "
+                "the x or y directions."
+            )
+
+    def _excitation_axis(self) -> None:
+        """
+        """
+        direction = int(np.sign(self._gnd_layer - self._trace_layer))
+        return Axis("z", direction)
+
+    def _propagation_direction(self) -> int:
+        """
+        Get the direction of the signal propagation.
+        """
+        return self._propagation_axis.direction
 
     def _microstrip_name(self) -> str:
         """
@@ -975,44 +1033,64 @@ class Microstrip(Structure):
     def _port_box(self) -> Box3:
         """
         """
-        x_bounds = self._x_bounds()
-        y_bounds = self._y_bounds()
+        prop_axis = self._propagation_axis.axis
+        perp_axis = self._trace_perpendicular_axis().axis
+        excite_axis = self._excitation_axis().axis
+
+        prop_bounds = self._prop_bounds()
+        perp_bounds = self._trace_perpendicular_bounds()
+
         box = Box3(
-            Coordinate3(x_bounds[0], y_bounds[0], self._gnd_z()),
-            Coordinate3(x_bounds[1], y_bounds[1], self._trace_z()),
+            Coordinate3(None, None, None), Coordinate3(None, None, None)
         )
+        box.min_corner[prop_axis] = prop_bounds[0]
+        box.max_corner[prop_axis] = prop_bounds[1]
+        box.min_corner[perp_axis] = perp_bounds[0]
+        box.max_corner[perp_axis] = perp_bounds[1]
+        box.min_corner[excite_axis] = self._gnd_z()
+        box.max_corner[excite_axis] = self._trace_z()
+
         return box
 
-    def _x_bounds(self) -> Tuple[float, float]:
+    def _prop_bounds(self) -> Tuple[float, float]:
         """
-        Minimum and maximum trace x positions.  This accounts for the
-        direction, so if the direction is negative, the minimum x will
-        be larger than the maximum x.
+        Minimum and maximum trace propagation positions.  This
+        accounts for the direction, so if the direction is negative,
+        the minimum position will be larger than the maximum position.
         """
-        min_x = self.position.x - (
+        prop_axis = self._propagation_axis.axis
+        min_val = self.position[prop_axis] - (
             self._propagation_direction() * self._length / 2
         )
-        max_x = self.position.x + (
+        max_val = self.position[prop_axis] + (
             self._propagation_direction() * self._length / 2
         )
-        return (min_x, max_x)
+        return (min_val, max_val)
 
-    def _y_bounds(self) -> Tuple[float, float]:
+    def _trace_perpendicular_bounds(self) -> Tuple[float, float]:
         """
         Minimum and maximum trace y positions.  This accounts for the
         direction, so if the direction is negative, the minimum y will
         be larger than the maximum y.  This shouldn't actually matter,
         but is implemented this way for consistency with _x_bounds.
         """
-        min_y = self.position.y - (
+        trace_perp_axis = self._trace_perpendicular_axis().axis
+        min_val = self.position[trace_perp_axis] - (
             self._propagation_direction() * self._width / 2
         )
-        max_y = self.position.y + (
+        max_val = self.position[trace_perp_axis] + (
             self._propagation_direction() * self._width / 2
         )
-        return (min_y, max_y)
+        return (min_val, max_val)
 
-    def _via_ypos(self) -> Tuple[float, float]:
+    def _trace_perpendicular_axis(self) -> Axis:
+        """
+        """
+        trace_axes = [0, 1]
+        trace_axes.remove(self._propagation_axis.axis)
+        return Axis(trace_axes[0])
+
+    def _via_perp_pos(self) -> Tuple[float, float]:
         """
         """
         return (
@@ -1697,7 +1775,6 @@ class Coax(Structure):
         shield_thickness: float,
         dielectric: Dielectric,
         propagation_axis: Axis,
-        negative_direction: bool = False,
         port_number: int = None,
         excite: bool = False,
         feed_impedance: float = None,
@@ -1717,14 +1794,12 @@ class Coax(Structure):
         :param radius: For a cross-section of the coaxial cable, this
             is the distance from the center to the inside edge of the
             outer conducting shield.
-        :param core_radius:
-        :param shield_thickness:
-        :param dielectric:
-        :param propagation_axis:
-        :param negative_direction: Flips the port direction to point
-            in the negative axis direction.  By default, the port
-            points in the positive axis direction.  Can be ignored if
-            the coaxial cable is not a port.
+        :param core_radius: Copper core radius.
+        :param shield_thickness: Outer conductive shield thickness.
+        :param dielectric: Dielectric material used between inner
+            copper core and outer shield.
+        :param propagation_axis: Signal propagation axis and
+            direction.
         :param port_number: If the coaxial cable is a port, this
             specifies the port number.  If you leave this as None, the
             coaxial cable will not be treated as a port (i.e. you
@@ -1747,7 +1822,6 @@ class Coax(Structure):
         self._shield_thickness = shield_thickness
         self._dielectric = dielectric
         self._propagation_axis = propagation_axis
-        self._negative_direction = negative_direction
         self._port_number = port_number
         self._excite = excite
         self._feed_impedance = feed_impedance

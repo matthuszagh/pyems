@@ -3,7 +3,7 @@ import numpy as np
 from openEMS.ports import UI_data
 from pyems.simulation import Simulation
 from pyems.mesh import Mesh
-from pyems.coordinate import Box3, box_overlap
+from pyems.coordinate import Box3, box_overlap, Axis
 
 
 # TODO self.csx_box is messy. Should instead wrap CSPrimitives and
@@ -19,7 +19,7 @@ class Probe:
         sim: Simulation,
         box: Box3,
         p_type: int = 0,
-        norm_dir: int = None,
+        normal_axis: Axis = None,
         weight: float = 1,
         mode_function: List = None,
     ):
@@ -28,7 +28,7 @@ class Probe:
         self._sim = sim
         self._box = box
         self.p_type = p_type
-        self.norm_dir = norm_dir
+        self._normal_axis = normal_axis
         self.weight = weight
         self.mode_function = mode_function
         self.name = self._probe_name_prefix() + "t_" + str(self._get_ctr())
@@ -70,8 +70,8 @@ class Probe:
         )
         self.csx_probe.SetWeighting(self.weight)
 
-        if self.norm_dir is not None:
-            self.csx_probe.SetNormalDir(self.norm_dir)
+        if self._normal_axis is not None:
+            self.csx_probe.SetNormalDir(self._normal_axis.axis)
 
         if self.mode_function is not None:
             self.csx_probe.SetModeFunction(self.mode_function)

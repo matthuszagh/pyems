@@ -132,15 +132,53 @@ class Coordinate3(Coordinate2):
 
 class Axis:
     """
+    An abstraction of a coordinate axis.  It may also optionally
+    specity a direction for cases where it is significant whether the
+    axis points in the positive or negative direction relative to the
+    normal coordinate axis.  When a direction is not specified, the
+    positive direction is taken.
     """
 
-    def __init__(self, val):
+    def __init__(self, axis, direction: int = 1):
         """
         """
-        if type(val) is str:
-            self._val = self._str_to_int(val)
+        if type(axis) is str:
+            self._axis = self._str_to_int(axis)
         else:
-            self._val = val
+            self._axis = axis
+
+        self._direction = direction
+        self._check_direction()
+
+    @property
+    def axis(self) -> int:
+        """
+        """
+        return self._axis
+
+    @property
+    def direction(self) -> int:
+        """
+        """
+        return self._direction
+
+    def is_positive_direction(self) -> bool:
+        """
+        """
+        return self._direction == 1
+
+    def as_list(self) -> List[int]:
+        """
+        """
+        lst = [0, 0, 0]
+        lst[self._axis] = self._direction
+        return lst
+
+    def _check_direction(self) -> None:
+        """
+        """
+        if self._direction != 1 and self._direction != -1:
+            raise ValueError("Invalid direction. Valid values are +1 and -1.")
 
     def _str_to_int(self, val: str) -> int:
         """
@@ -175,12 +213,12 @@ class Axis:
     def intval(self) -> int:
         """
         """
-        return self._val
+        return self._axis
 
     def strval(self) -> str:
         """
         """
-        return self._int_to_str(self._val)
+        return self._int_to_str(self._axis)
 
 
 class Box2:
@@ -216,6 +254,11 @@ class Box2:
         List object expected by OpenEMS interface.
         """
         return self.max_corner.coordinate_list()
+
+    def as_list(self) -> List[List[float]]:
+        """
+        """
+        return [self.start(), self.stop()]
 
     def center(self) -> Coordinate2:
         """
@@ -301,6 +344,18 @@ class Box3:
         """
         self._max_corner = val
 
+    def set_increasing(self) -> None:
+        """
+        Rearrange min and max coordinates so that all min_corner
+        coordinates are less than or equal to all max_corner
+        coordinates.
+        """
+        for dim in range(3):
+            if self.min_corner[dim] > self.max_corner[dim]:
+                old_max = self.max_corner[dim]
+                self.max_corner[dim] = self.min_corner[dim]
+                self.min_corner[dim] = old_max
+
     def corners(self) -> List[Coordinate3]:
         """
         """
@@ -359,6 +414,11 @@ class Box3:
         List object expected by OpenEMS interface.
         """
         return self.max_corner.coordinate_list()
+
+    def as_list(self) -> List[List[float]]:
+        """
+        """
+        return [self.start(), self.stop()]
 
     def center(self) -> Coordinate3:
         """

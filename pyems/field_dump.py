@@ -1,8 +1,28 @@
 from tempfile import mkdtemp
+from enum import Enum
 import os
 import subprocess
 from pyems.simulation import Simulation
 from pyems.coordinate import Box3
+
+
+class DumpType(Enum):
+    """
+    Field (and other) dump types.
+    """
+
+    efield_time = 0
+    hfield_time = 1
+    current_time = 2
+    current_density_time = 3
+    efield_frequency = 10
+    hfield_frequency = 11
+    current_frequency = 12
+    current_density_frequency = 13
+    local_sar_frequency = 20
+    average_sar_frequency_1g = 21
+    average_sar_frequency_10g = 22
+    raw_data = 29
 
 
 class FieldDump:
@@ -15,8 +35,8 @@ class FieldDump:
         self,
         sim: Simulation,
         box: Box3,
-        field_type: int = 0,
-        dir_path: str = "fields",
+        dump_type: DumpType = DumpType.efield_time,
+        dir_path: str = "dump",
     ):
         """
         :param dir_path: Directory where field dump data is stored.
@@ -28,7 +48,7 @@ class FieldDump:
         """
         self._sim = sim
         self._box = box
-        self._field_type = field_type
+        self._dump_type = dump_type
         self._index = self._get_inc_ctr()
         if dir_path is None:
             dir_path = mkdtemp()
@@ -44,7 +64,7 @@ class FieldDump:
 
         dump = self._sim.csx.AddDump(
             os.path.join(self._dir_path, "Et_"),
-            dump_type=self._field_type,
+            dump_type=self._dump_type.value,
             file_type=0,
         )
         dump.AddBox(start=self.box.start(), stop=self.box.stop())
@@ -63,10 +83,10 @@ class FieldDump:
         return self._box
 
     @property
-    def field_type(self) -> int:
+    def dump_type(self) -> int:
         """
         """
-        return self._field_type
+        return self._dump_type
 
     def view(self):
         """

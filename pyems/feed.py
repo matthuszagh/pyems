@@ -101,6 +101,9 @@ class Feed:
     def pml_overlap(self) -> bool:
         """
         """
+        if self.excitation_box is None and self.res_box is None:
+            return False
+
         pml_boxes = self.sim.mesh.pml_boxes()
         for pml_box in pml_boxes:
             if box_overlap(self.box, pml_box):

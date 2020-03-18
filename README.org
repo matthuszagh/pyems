@@ -229,7 +229,14 @@ instance see the mesh.py file). However, I'm still getting some
 ignored structures. Maybe I also need to do this when adding
 structures?
 
-** TODO coax port
+** TODO rectwaveguideport propagation axis
+This should use the Axis object.
+
+** TODO port calc requires self._propagation_axis set
+self._propagation_axis is not currently required for the port base
+class. The interface must be changed in some way that is also
+compatible with the derived classes.
+
 ** HOLD mesh should support primitive priorities
 ** HOLD mesh option to ignore very small structures
 This is useful when your model inadvertently creates tiny structures

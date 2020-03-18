@@ -296,6 +296,7 @@ class Port(ABC):
         """
         [vprobe.read() for vprobe in self.vprobes]
         [iprobe.read() for iprobe in self.iprobes]
+        prop_axis = self.propagation_axis().axis
         self._data_read = True
         v = self.vprobes[1].get_freq_data()[1]
         i = 0.5 * (
@@ -308,8 +309,8 @@ class Port(ABC):
         ) / (
             self.sim.unit
             * np.abs(
-                self.vprobes[2].box.min_corner.x
-                - self.vprobes[0].box.min_corner.x
+                self.vprobes[2].box.min_corner[prop_axis]
+                - self.vprobes[0].box.min_corner[prop_axis]
             )
         )
         di = (
@@ -318,8 +319,8 @@ class Port(ABC):
         ) / (
             self.sim.unit
             * np.abs(
-                self.iprobes[1].box.min_corner.x
-                - self.iprobes[0].box.min_corner.x
+                self.iprobes[1].box.min_corner[prop_axis]
+                - self.iprobes[0].box.min_corner[prop_axis]
             )
         )
 
@@ -331,6 +332,12 @@ class Port(ABC):
         self._calc_i_ref(v, i)
         self._calc_p_inc()
         self._calc_p_ref()
+
+    @abstractmethod
+    def propagation_axis(self) -> Axis:
+        """
+        """
+        pass
 
     def _data_readp(self) -> bool:
         """
@@ -351,6 +358,8 @@ class PlanarPort(Port):
         self,
         sim: Simulation,
         box: Box3,
+        propagation_axis: Axis,
+        excitation_axis: Axis,
         number: int,
         thickness: float,
         conductivity: float = 5.8e7,
@@ -361,32 +370,17 @@ class PlanarPort(Port):
         measurement_shift: float = 0.5,
     ):
         """
-        Planar port.
-
-        The shape of the planar trace is rectangular in the xy plane.
-        The first corner is determined by the x,y coordinates of
-        `start_corner` and the opposite corner is determined by the
-        x,y coordinates of `stop_corner`.  The z-position of the trace
-        is determined by the z coordinate of `stop_corner`.  The z
-        coordinate of `start_corner` gives the z position of the PCB
-        ground plane beneath the top layer.  Specifically, it
-        determines the height of the feed and measurement probes.
-
-        By default, the trace extends in length from xmin to xmax.
-        This behavior can be changed with the `rotate` parameter,
-        which will rotate the structure at an angle about the z-axis.
-        It is not currently possible to create a microstrip port that
-        is not in the xy-plane.
-
-        Excitation feeds are placed relative to `start_corner`'s x
-        position.  See `feed_shift` for the relative positioning.
-
         :param sim: Simulation to which planar port is added.
-        :param box: 3D box where the xy coordinates demarcate the
-            trace and the order indicates whether the signal
-            propagation direction is in the +x or -x direction.  The
-            z-coordinate gives the distance to the ground plane and
-            the direction indicates the signal excitation direction.
+        :param box: 3D box specifying the port dimensions.  The trace
+            dimensions are given by the rectangle perpendicular to the
+            `excitation_axis` and at the max value for that excitation
+            axis.  The excitation will dimensions are from the minimum
+            `exctitation_axis` value to the maximum value.  The order
+            of coordinates does not matter.
+        :param propagation_axis: Specifies the coordinate axis and
+            direction in which the signal propagation occurs.
+        :param excitation_axis: Axis and direction of signal
+            excitation.
         :param thickness: Metal trace thickness.  Units are whatever
             you set the CSX unit to, defaults to m.
         :param conductivity: Metal conductivity (in S/m).  The default
@@ -416,6 +410,10 @@ class PlanarPort(Port):
         """
         super().__init__(sim=sim, number=number, excite=excite)
         self._box = box
+        self._box.set_increasing()
+        self._propagation_axis = propagation_axis
+        self._excitation_axis = excitation_axis
+        self._check_axes_perpendicular()
         self.thickness = thickness
         self.conductivity = conductivity
         self.feed_impedance = feed_impedance
@@ -431,14 +429,23 @@ class PlanarPort(Port):
         """
         return self._box
 
-    @abstractmethod
-    def calc(self) -> None:
-        pass
+    def propagation_axis(self) -> Axis:
+        """
+        """
+        return self._propagation_axis
 
     def get_feed_shift(self) -> float:
         """
         """
         return self.feed_shift
+
+    def _check_axes_perpendicular(self) -> None:
+        """
+        """
+        if self._propagation_axis.axis == self._excitation_axis.axis:
+            raise ValueError(
+                "Excitation and propagation axes must be perpendicular."
+            )
 
     def _set_trace(self) -> None:
         """
@@ -459,20 +466,41 @@ class PlanarPort(Port):
         Get the trace box.
         """
         trace_box = deepcopy(self.box)
-        trace_box.min_corner.z = self.box.max_corner.z
+        excitation_axis = self._excitation_axis.axis
+        if self._excitation_axis.is_positive_direction():
+            trace_box.min_corner[excitation_axis] = trace_box.max_corner[
+                excitation_axis
+            ]
+        else:
+            trace_box.max_corner[excitation_axis] = trace_box.min_corner[
+                excitation_axis
+            ]
+
         return trace_box
 
     def _propagation_direction(self) -> int:
         """
-        Get the direction of the signal propagation in the x-axis.
+        Get the direction of the signal propagation.
         """
-        return int(np.sign(self.box.max_corner.x - self.box.min_corner.x))
+        return self._propagation_axis.direction
 
     def _excitation_direction(self) -> int:
         """
-        Get the direction of the signal excitation in the z-axis.
+        Get the direction of the signal excitation.
         """
-        return int(np.sign(self.box.max_corner.z - self.box.min_corner.z))
+        return self._excitation_axis.direction
+
+    def _trace_perpendicular_axis(self) -> Axis:
+        """
+        """
+        axes = [0, 1, 2]
+        axes.remove(self._propagation_axis.axis)
+        axes.remove(self._excitation_axis.axis)
+        trace_perp_axis = axes[0]
+        if self._propagation_axis.is_positive_direction():
+            return Axis(trace_perp_axis)
+        else:
+            return Axis(trace_perp_axis, -1)
 
     @abstractmethod
     def _set_probes(self, mesh: Mesh) -> None:
@@ -499,7 +527,7 @@ class MicrostripPort(PlanarPort):
         feed = Feed(
             sim=self._sim,
             box=self._feed_box(mesh),
-            excite_direction=[0, 0, 1],
+            excite_direction=self._excitation_axis.as_list(),
             excite_type=excite_type,
             impedance=self.feed_impedance,
         )
@@ -509,72 +537,123 @@ class MicrostripPort(PlanarPort):
         """
         Set measurement probes.
         """
-        trace_box = self._trace_box()
-        trace_ylow = trace_box.min_corner.y
-        trace_yhigh = trace_box.max_corner.y
-        trace_ymid = (trace_ylow + trace_yhigh) / 2
-        gnd_z = self.box.min_corner.z
-        trace_z = trace_box.max_corner.z
+        trace_box = deepcopy(self._trace_box())
+        trace_perp_axis = self._trace_perpendicular_axis().axis
+        trace_perp_low = trace_box.min_corner[trace_perp_axis]
+        trace_perp_high = trace_box.max_corner[trace_perp_axis]
+        trace_perp_mid = np.average([trace_perp_low, trace_perp_high])
 
-        trace_xlow = trace_box.min_corner.x
-        trace_xhigh = trace_box.max_corner.x
-        x_index, vxmid = mesh.nearest_mesh_line(
-            0,
-            trace_box.min_corner.x
-            + (self.measurement_shift * (trace_xhigh - trace_xlow)),
-        )
-        mesh.set_lines_equidistant(0, x_index - 1, x_index + 1)
+        excitation_axis = self._excitation_axis.axis
+        if self._excitation_axis.is_positive_direction():
+            gnd_pos = self.box.min_corner[excitation_axis]
+            trace_pos = self.box.max_corner[excitation_axis]
+        else:
+            gnd_pos = self.box.max_corner[excitation_axis]
+            trace_pos = self.box.min_corner[excitation_axis]
 
-        vxpos = [
-            mesh.get_mesh_line(0, x_index - self._propagation_direction()),
-            mesh.get_mesh_line(0, x_index),
-            mesh.get_mesh_line(0, x_index + self._propagation_direction()),
-        ]
-        ixpos = [
-            (vxpos[0] + vxpos[1]) / 2,
-            (vxpos[1] + vxpos[2]) / 2,
-        ]
-        self.vprobes = [
-            Probe(
-                sim=self._sim,
-                box=Box3(
-                    Coordinate3(xpos, trace_ymid, gnd_z),
-                    Coordinate3(xpos, trace_ymid, trace_z),
+        prop_axis = self._propagation_axis.axis
+        trace_prop_low = trace_box.min_corner[prop_axis]
+        trace_prop_high = trace_box.max_corner[prop_axis]
+        if self._propagation_axis.is_positive_direction():
+            prop_index, vxmid = mesh.nearest_mesh_line(
+                prop_axis,
+                trace_box.min_corner[prop_axis]
+                + (
+                    self.measurement_shift * (trace_prop_high - trace_prop_low)
                 ),
-                p_type=0,
-                weight=self._excitation_direction(),
             )
-            for xpos in vxpos
-        ]
-        self.iprobes = [
-            Probe(
-                sim=self._sim,
-                box=Box3(
-                    Coordinate3(xpos, trace_ylow, trace_z),
-                    Coordinate3(xpos, trace_yhigh, trace_z),
+        else:
+            prop_index, vxmid = mesh.nearest_mesh_line(
+                prop_axis,
+                trace_box.max_corner[prop_axis]
+                - (
+                    self.measurement_shift * (trace_prop_high - trace_prop_low)
                 ),
-                p_type=1,
-                norm_dir=0,
-                weight=-self._propagation_direction(),  # TODO negative??
             )
-            for xpos in ixpos
+        mesh.set_lines_equidistant(0, prop_index - 1, prop_index + 1)
+
+        v_prop_pos = [
+            mesh.get_mesh_line(
+                prop_axis, prop_index - self._propagation_direction()
+            ),
+            mesh.get_mesh_line(prop_axis, prop_index),
+            mesh.get_mesh_line(
+                prop_axis, prop_index + self._propagation_direction()
+            ),
         ]
+        i_prop_pos = [
+            (v_prop_pos[0] + v_prop_pos[1]) / 2,
+            (v_prop_pos[1] + v_prop_pos[2]) / 2,
+        ]
+
+        for idx in range(3):
+            box = Box3(
+                Coordinate3(None, None, None), Coordinate3(None, None, None)
+            )
+            box.min_corner[prop_axis] = v_prop_pos[idx]
+            box.max_corner[prop_axis] = v_prop_pos[idx]
+            box.min_corner[trace_perp_axis] = trace_perp_mid
+            box.max_corner[trace_perp_axis] = trace_perp_mid
+            box.min_corner[excitation_axis] = gnd_pos
+            box.max_corner[excitation_axis] = trace_pos
+            self.vprobes.append(
+                Probe(
+                    sim=self._sim,
+                    box=box,
+                    p_type=0,
+                    weight=self._excitation_direction(),
+                )
+            )
+
+        for idx in range(2):
+            box = Box3(
+                Coordinate3(None, None, None), Coordinate3(None, None, None)
+            )
+            box.min_corner[prop_axis] = i_prop_pos[idx]
+            box.max_corner[prop_axis] = i_prop_pos[idx]
+            box.min_corner[trace_perp_axis] = trace_perp_low
+            box.max_corner[trace_perp_axis] = trace_perp_high
+            box.min_corner[excitation_axis] = trace_pos
+            box.max_corner[excitation_axis] = trace_pos
+            self.iprobes.append(
+                Probe(
+                    sim=self._sim,
+                    box=box,
+                    p_type=1,
+                    normal_axis=self._propagation_axis,
+                    weight=-self._propagation_direction(),  # TODO negative??
+                )
+            )
 
     def _feed_box(self, mesh: Mesh) -> Box3:
         """
         Get the excitation feed box.
         """
-        _, xpos = mesh.nearest_mesh_line(
-            0,
-            self.box.min_corner.x
-            + (
-                self.feed_shift
-                * (self.box.max_corner.x - self.box.min_corner.x)
-            ),
+        box = deepcopy(self.box)
+        feed_axis = self._excitation_axis.axis
+        if not self._excitation_axis.is_positive_direction():
+            old_max = box.max_corner[feed_axis]
+            box.max_corner[feed_axis] = box.min_corner[feed_axis]
+            box.min_corner[feed_axis] = old_max
+
+        prop_axis = self._propagation_axis.axis
+        prop_dist = (
+            self.box.max_corner[prop_axis] - self.box.min_corner[prop_axis]
         )
-        box = self.box
-        box.min_corner.x = xpos
-        box.max_corner.x = xpos
+        if self._propagation_axis.is_positive_direction():
+            _, prop_pos = mesh.nearest_mesh_line(
+                prop_axis,
+                self.box.min_corner[prop_axis] + (self.feed_shift * prop_dist),
+            )
+        else:
+            _, prop_pos = mesh.nearest_mesh_line(
+                prop_axis,
+                self.box.max_corner[prop_axis] - (self.feed_shift * prop_dist),
+            )
+
+        box.max_corner[prop_axis] = prop_pos
+        box.min_corner[prop_axis] = prop_pos
+
         return box
 
 
@@ -805,7 +884,7 @@ class CPWPort(PlanarPort):
                     Coordinate3(xpos, trace_yhigh, trace_z),
                 ),
                 p_type=1,
-                norm_dir=0,
+                normal_axis=Axis("x"),
                 weight=-self._propagation_direction(),
             )
             for xpos in ixpos
@@ -1139,7 +1218,8 @@ class CoaxPort(Port):
             radial center.
         :param stop: Ending position of the coaxial port at its radial
             center.  `start` and `stop` can only differ in one
-            dimension.
+            dimension.  In other words, the coaxial port must be
+            parallel to a coordinate axis.
         :param radius: Distance between center and outer conductor for
             a cross section of the coaxial cable.
         :param core_radius: Radius of the inner copper core.
@@ -1183,7 +1263,10 @@ class CoaxPort(Port):
             axis=0,
         )
         if np.count_nonzero(diff) != 1:
-            raise ValueError("Invalid start and stop coordinates.")
+            raise ValueError(
+                "Invalid start and stop coordinates. Port must be parallel "
+                "to a coordinate axis."
+            )
 
     def _set_core(self) -> None:
         """
@@ -1196,7 +1279,7 @@ class CoaxPort(Port):
             priority=priorities["trace"],
         )
 
-    def _propagation_axis(self) -> Axis:
+    def propagation_axis(self) -> Axis:
         """
         """
         diff = np.diff(
@@ -1212,7 +1295,7 @@ class CoaxPort(Port):
         +1 for positive direction in propagation axis direction and -1
         for negative direction.
         """
-        axis_int = self._propagation_axis().intval()
+        axis_int = self.propagation_axis().intval()
         return int(np.sign(self._stop[axis_int] - self._start[axis_int]))
 
     def _core_name(self) -> str:
@@ -1224,7 +1307,7 @@ class CoaxPort(Port):
         """
         Set measurement probes.
         """
-        prop_axis = self._propagation_axis().intval()
+        prop_axis = self.propagation_axis().intval()
         pos = (
             self._direction()
             * self._measurement_shift
@@ -1291,7 +1374,7 @@ class CoaxPort(Port):
                     sim=self.sim,
                     box=box,
                     p_type=1,
-                    norm_dir=prop_axis,
+                    normal_axis=self.propagation_axis(),
                     weight=-self._direction(),  # TODO negative??
                 )
             )
@@ -1305,7 +1388,7 @@ class CoaxPort(Port):
         else:
             excite_type = None
 
-        prop_axis = self._propagation_axis().intval()
+        prop_axis = self.propagation_axis().intval()
         pos = (
             self._direction()
             * self._feed_shift
