@@ -85,6 +85,14 @@ def _set_polygon(
     priority: int,
 ) -> None:
     """
+    :param points: A list of 2 lists of positions, where the first
+        inner list describes the x-coordinate positions and the second
+        inner list describes the y-coordinate positions.  Each polygon
+        point is given by the x- and y-coordinate with matching list
+        position.  The z-coordinate point is given by `elevation`.
+        Select the points relative to the origin such that `transform`
+        will be applied about the origin.  After `transform` is
+        applied, the origin will be translated to `position`.
     """
     poly = prop.AddPolygon(
         points=points, norm_dir=2, elevation=elevation, priority=priority,
@@ -1287,8 +1295,15 @@ class Taper(Structure):
 
 class Miter(Structure):
     """
-    Microstrip mitered bend. Currently only supports 90degree bends.
+    Microstrip mitered bend.  Currently only supports 90degree bends.
+    By default, this will connect to the right side of a microstrip
+    travelling in the +x-direction and the top of a microstrip
+    travelling in the +y-direction.  Transforms can be used for any
+    other configuration.  Transforms will be applied relative to the
+    `position` argument.
     """
+
+    unique_index = 0
 
     def __init__(
         self,
@@ -1323,6 +1338,7 @@ class Miter(Structure):
         self._position = position
         self._pcb_layer = pcb_layer
         self._gnd_layer = gnd_layer
+        self._trace_width = trace_width
         if miter is None:
             height = np.abs(
                 self.pcb.copper_layer_elevation(pcb_layer)
@@ -1333,6 +1349,7 @@ class Miter(Structure):
             self._miter = miter
         self._gap = gap
         self._transform = transform
+        self._index = self._get_inc_ctr()
 
         if self.position is not None:
             self.construct(self.position)
@@ -1355,6 +1372,22 @@ class Miter(Structure):
         """
         return self._transform
 
+    def corner_length(self) -> float:
+        """
+        """
+        return self._trace_width * np.sqrt(2)
+
+    def end_point(self) -> Coordinate2:
+        """
+        Coordinate of the end of the miter.  Analogous to
+        `self.position` but for the end of the miter.
+        """
+        inset_len = self._trace_width - self.overlap_length()
+        xpos = self.position.x + self._trace_width / 2 + inset_len
+        ypos = self.position.y - (self._trace_width / 2) - inset_len
+
+        return Coordinate2(xpos, ypos)
+
     def construct(
         self, position: Coordinate2, transform: CSTransform = None
     ) -> None:
@@ -1364,6 +1397,117 @@ class Miter(Structure):
         self._position = position
         self._construct_trace()
         self._construct_gap()
+
+    def _construct_trace(self) -> None:
+        """
+        """
+        prop = self.pcb.sim.csx.AddConductingSheet(
+            self._trace_name(),
+            conductivity=self.pcb.pcb_prop.metal_conductivity(),
+            thickness=self.pcb.pcb_prop.copper_thickness(self._pcb_layer),
+        )
+        pos = Coordinate3(self.position.x, self.position.y, 0)
+        _set_polygon(
+            prop=prop,
+            points=self._trace_points(),
+            elevation=self.pcb.copper_layer_elevation(self._pcb_layer),
+            position=pos,
+            transform=self.transform,
+            priority=priorities["trace"],
+        )
+
+    def _construct_gap(self) -> None:
+        """
+        """
+        center_freq = self.pcb.sim.center_frequency()
+        prop = self.pcb.sim.csx.AddMaterial(
+            self._gap_name(),
+            epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(center_freq),
+            kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(center_freq),
+        )
+        pos = Coordinate3(self.position.x, self.position.y, 0)
+        _set_polygon(
+            prop=prop,
+            points=self._gap_points(),
+            elevation=self.pcb.copper_layer_elevation(self._pcb_layer),
+            position=pos,
+            transform=self.transform,
+            priority=priorities["keepout"],
+        )
+
+    def _trace_points(self) -> List[List[float]]:
+        """
+        List of miter x and y-coordinates such that self.position is
+        taken as the origin.  See _set_polygon for how these points
+        are used.
+        """
+        inset_len = self.inset_length()
+        pts = [[], []]
+        # 1st point from top left, proceeding counterclockwise
+        pts[0].append(0)
+        pts[1].append(self._trace_width / 2)
+        # 2nd point
+        pts[0].append(0)
+        pts[1].append(-self._trace_width / 2)
+        # 3rd point
+        pts[0].append(inset_len)
+        pts[1].append(-self._trace_width / 2)
+        # 4
+        pts[0].append(inset_len)
+        pts[1].append(-self._trace_width / 2 - inset_len)
+        # 5
+        pts[0].append(inset_len + self._trace_width)
+        pts[1].append(-self._trace_width / 2 - inset_len)
+
+        return pts
+
+    def _gap_points(self) -> List[List[float]]:
+        """
+        """
+        inset_len = self.inset_length()
+        pts = [[], []]
+        # 1
+        pts[0].append(0)
+        pts[1].append(self._trace_width / 2 + self._gap)
+        # 2
+        pts[0].append(0)
+        pts[1].append(-self._trace_width / 2 - inset_len)
+        # 3
+        pts[0].append(self._trace_width + inset_len + self._gap)
+        pts[1].append(-self._trace_width / 2 - inset_len)
+        # 4
+        pts[0].append(self._trace_width + inset_len + self._gap)
+        pts[1].append(
+            -self._trace_width / 2 - inset_len + (self._gap / np.sqrt(2))
+        )
+        # 5
+        pts[0].append(self._gap / np.sqrt(2))
+        pts[1].append(self._trace_width / 2 + self._gap)
+
+        return pts
+
+    def overlap_length(self) -> float:
+        """
+        """
+        corner_len = self.corner_length()
+        if self._miter > corner_len:
+            raise RuntimeError("Miter is larger than corner length.")
+        return (self.corner_length() - self._miter) * np.sqrt(2)
+
+    def inset_length(self) -> float:
+        """
+        """
+        return self._trace_width - self.overlap_length()
+
+    def _trace_name(self) -> str:
+        """
+        """
+        return "miter_trace_" + str(self._index)
+
+    def _gap_name(self) -> str:
+        """
+        """
+        return "miter_gap_" + str(self._index)
 
 
 class SMDPassiveDimensions:

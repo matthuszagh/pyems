@@ -114,7 +114,11 @@ def miter(trace_width: float, substrate_height: float) -> float:
         raise ValueError(
             "Ratio of trace width to height must be at least 0.25."
         )
-    return 0.52 + (0.65 * np.exp(-(27 / 20) * trace_width / substrate_height))
+    return (
+        trace_width
+        * np.sqrt(2)
+        * (0.52 + (0.65 * np.exp(-(27 / 20) * trace_width / substrate_height)))
+    )
 
 
 def coax_core_diameter(
