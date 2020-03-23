@@ -1271,10 +1271,18 @@ class CoaxPort(Port):
     def _set_core(self) -> None:
         """
         """
+        # TODO bug?? cylinder ignored if start > stop
+        if self._direction == 1:
+            start = self._start.coordinate_list()
+            stop = self._stop.coordinate_list()
+        else:
+            start = self._stop.coordinate_list()
+            stop = self._start.coordinate_list()
+
         core_prop = self.sim.csx.AddMetal(self._core_name())
         core_prop.AddCylinder(
-            start=self._start.coordinate_list(),
-            stop=self._stop.coordinate_list(),
+            start=start,
+            stop=stop,
             radius=self._core_radius,
             priority=priorities["trace"],
         )
@@ -1309,8 +1317,7 @@ class CoaxPort(Port):
         """
         prop_axis = self.propagation_axis().intval()
         pos = (
-            self._direction()
-            * self._measurement_shift
+            self._measurement_shift
             * (self._stop[prop_axis] - self._start[prop_axis])
         ) + self._start[prop_axis]
         mid_idx, mid_pos = mesh.nearest_mesh_line(prop_axis, pos)
