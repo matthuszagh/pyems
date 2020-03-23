@@ -1761,11 +1761,11 @@ class SMDPassive(Structure):
         ymax = self._gnd_cutout_width / 2
         zpos = self._gnd_elevation()
 
-        center_freq = self.pcb.sim.center_frequency()
+        ref_freq = self.pcb.sim.reference_frequency
         cutout_prop = self.pcb.sim.csx.AddMaterial(
             self._cutout_name(),
-            epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(center_freq),
-            kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(center_freq),
+            epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
+            kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
         )
         _set_box(
             prop=cutout_prop,
