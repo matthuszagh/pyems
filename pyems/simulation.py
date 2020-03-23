@@ -23,6 +23,7 @@ class Simulation:
         boundary_conditions: BoundaryConditions = BoundaryConditions(
             (("PML_8", "PML_8"), ("PML_8", "PML_8"), ("PML_8", "PML_8")),
         ),
+        reference_frequency: float = None,
         end_criteria: float = 1e-5,
         sim_dir: str = "sim",
     ):
@@ -43,6 +44,11 @@ class Simulation:
         :param boundary_conditions: The OpenEMS simulation boundary
             conditions.  Corresponds to ((xmin, xmax), (ymin, ymax),
             (zmin, zmax)).  See the OpenEMS documentation for details.
+        :param reference_frequency: Certain dielectric properties are
+            frequency dependent.  OpenEMS can only use a single value
+            for these parameters during a simulation.  This parameter
+            sets the frequency to use.  If the default None is given,
+            the center frequency from the frequency array is used.
         :param end_criteria: FDTD termination energy.
         :param sim_dir: Directory where simulation results are stored.
             If you pass None, a temporary directory will be used.
@@ -56,6 +62,10 @@ class Simulation:
         self._csx = ContinuousStructure()
         self._csx.GetGrid().SetDeltaUnit(self._unit)
         self._boundary_conditions = boundary_conditions
+        if reference_frequency is None:
+            self._reference_frequency = self.center_frequency()
+        else:
+            self._reference_frequency = reference_frequency
         self._end_criteria = end_criteria
         if sim_dir is None:
             self._sim_dir = mkdtemp()
@@ -240,6 +250,12 @@ class Simulation:
         """
         idx = int(len(self.freq) / 2)
         return self.freq[idx]
+
+    @property
+    def reference_frequency(self) -> float:
+        """
+        """
+        return self._reference_frequency
 
     def half_bandwidth(self) -> float:
         """

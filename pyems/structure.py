@@ -366,14 +366,11 @@ class PCB(Structure):
     ) -> None:
         """
         """
+        ref_freq = self.sim.reference_frequency
         layer_prop = self.sim.csx.AddMaterial(
             self._layer_name(layer_index),
-            epsilon=self.pcb_prop.substrate.epsr_at_freq(
-                self.sim.center_frequency()
-            ),
-            kappa=self.pcb_prop.substrate.kappa_at_freq(
-                self.sim.center_frequency()
-            ),
+            epsilon=self.pcb_prop.substrate.epsr_at_freq(ref_freq),
+            kappa=self.pcb_prop.substrate.kappa_at_freq(ref_freq),
         )
         xbounds = self._x_bounds()
         ybounds = self._y_bounds()
@@ -624,10 +621,10 @@ class Via(Structure):
             antipad_prop = self.pcb.sim.csx.AddMaterial(
                 self._antipad_name(layer),
                 epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(
-                    self.pcb.sim.center_frequency()
+                    self.pcb.sim.reference_frequency
                 ),
                 kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(
-                    self.pcb.sim.center_frequency()
+                    self.pcb.sim.reference_frequency
                 ),
             )
             antipad_prim = construct_circle(
@@ -891,7 +888,7 @@ class Microstrip(Structure):
         if self._gnd_gap is None:
             return
 
-        freq = self.pcb.sim.center_frequency()
+        freq = self.pcb.sim.reference_frequency
         gap_prop = self.pcb.sim.csx.AddMaterial(
             self._gap_name(),
             epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(freq),
@@ -1242,11 +1239,11 @@ class Taper(Structure):
         if self._gap is None:
             return
 
-        center_freq = self.pcb.sim.center_frequency()
+        ref_freq = self.pcb.sim.reference_frequency
         gap_prop = self.pcb.sim.csx.AddMaterial(
             self._gap_name(),
-            epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(center_freq),
-            kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(center_freq),
+            epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
+            kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
         )
         pts = self._trapezoid_points(
             self.width1 + (2 * self._gap), self.width2 + (2 * self._gap)
@@ -1419,11 +1416,11 @@ class Miter(Structure):
     def _construct_gap(self) -> None:
         """
         """
-        center_freq = self.pcb.sim.center_frequency()
+        ref_freq = self.pcb.sim.reference_frequency
         prop = self.pcb.sim.csx.AddMaterial(
             self._gap_name(),
-            epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(center_freq),
-            kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(center_freq),
+            epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
+            kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
         )
         pos = Coordinate3(self.position.x, self.position.y, 0)
         _set_polygon(
@@ -1446,10 +1443,10 @@ class Miter(Structure):
         # 1st point from top left, proceeding counterclockwise
         pts[0].append(0)
         pts[1].append(self._trace_width / 2)
-        # 2nd point
+        # 2
         pts[0].append(0)
         pts[1].append(-self._trace_width / 2)
-        # 3rd point
+        # 3
         pts[0].append(inset_len)
         pts[1].append(-self._trace_width / 2)
         # 4
@@ -1738,11 +1735,11 @@ class SMDPassive(Structure):
         ymax = (self.dimensions.width / 2) + self._gap
         zpos = self._pad_elevation()
 
-        center_freq = self.pcb.sim.center_frequency()
+        ref_freq = self.pcb.sim.reference_frequency
         gap_prop = self.pcb.sim.csx.AddMaterial(
             self._gap_name(),
-            epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(center_freq),
-            kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(center_freq),
+            epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
+            kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
         )
         _set_box(
             prop=gap_prop,
@@ -2037,11 +2034,11 @@ class Coax(Structure):
     def _construct_dielectric(self) -> None:
         """
         """
-        center_freq = self.sim.center_frequency()
+        ref_freq = self.sim.reference_frequency
         dielectric_prop = self.sim.csx.AddMaterial(
             self._dielectric_name(),
-            epsilon=self._dielectric.epsr_at_freq(center_freq),
-            kappa=self._dielectric.kappa_at_freq(center_freq),
+            epsilon=self._dielectric.epsr_at_freq(ref_freq),
+            kappa=self._dielectric.kappa_at_freq(ref_freq),
         )
         _set_cylindrical_shell(
             prop=dielectric_prop,

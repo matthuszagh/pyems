@@ -92,7 +92,7 @@ class NF2FF:
             effective_aperture
             * 4
             * np.pi
-            / np.power(wavelength(self.sim.center_frequency(), 1), 2)
+            / np.power(wavelength(self.sim.reference_frequency, 1), 2)
         )
 
     def _construct_box(self):
@@ -120,7 +120,7 @@ class NF2FF:
         self._phi = phi
         res = self._box.CalcNF2FF(
             sim_path=self.sim.sim_dir,
-            freq=self.sim.center_frequency(),
+            freq=self.sim.reference_frequency,
             theta=theta,
             phi=phi,
             radius=radius,
