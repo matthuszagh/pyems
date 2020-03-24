@@ -142,6 +142,20 @@ def pozar_z0_width(
         * (0.23 + (0.11 / substrate_dielectric))
     )
     b = 377 * np.pi / (2 * z0 * np.sqrt(substrate_dielectric))
+    ratio1 = 8 * np.exp(a) / (np.exp(2 * a) - 2)
+    ratio2 = (2 / np.pi) * (
+        b
+        - 1
+        - np.log(2 * b - 1)
+        + ((substrate_dielectric - 1) / (2 * substrate_dielectric))
+        * (np.log(b - 1) + 0.39 - 0.61 / substrate_dielectric)
+    )
+    if ratio1 < 2 and ratio2 < 2:
+        return ratio1 * substrate_height
+    elif ratio1 > 2 and ratio2 > 2:
+        return ratio2 * substrate_height
+    else:
+        raise RuntimeError("Conflicting ratios.")
 
 
 def miter(trace_width: float, substrate_height: float) -> float:
@@ -153,11 +167,11 @@ def miter(trace_width: float, substrate_height: float) -> float:
         raise ValueError(
             "Ratio of trace width to height must be at least 0.25."
         )
-    return (
-        trace_width
-        * np.sqrt(2)
-        * (0.52 + (0.65 * np.exp(-(27 / 20) * trace_width / substrate_height)))
+    d = trace_width * np.sqrt(2)
+    x = d * (
+        0.52 + (0.65 * np.exp(-(27 / 20) * trace_width / substrate_height))
     )
+    return x
 
 
 def coax_core_diameter(
