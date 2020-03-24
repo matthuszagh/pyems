@@ -26,6 +26,7 @@ class Simulation:
         reference_frequency: float = None,
         end_criteria: float = 1e-5,
         sim_dir: str = "sim",
+        calc_only: bool = False,
     ):
         """
         :param freq: An ordered (ascending) numpy array or list of
@@ -56,6 +57,12 @@ class Simulation:
             directory since it makes it more difficult to abort the
             simulation and to avoid rerunning unnecessary parts of the
             simulation.
+        :param calc_only: Will not clear a previous simulation and run
+            a new one.  This looks for existing simulation results in
+            `sim_dir` and calculates results for it.  Unfortunately,
+            Simulation still needs to be told about all ports and
+            simulation parameters in order to interpret the simulation
+            results.
         """
         self._freq = np.array(freq)
         self._unit = unit
@@ -67,13 +74,15 @@ class Simulation:
         else:
             self._reference_frequency = reference_frequency
         self._end_criteria = end_criteria
+        self._calc_only = calc_only
         if sim_dir is None:
             self._sim_dir = mkdtemp()
         else:
             sim_dir = os.path.abspath(sim_dir)
-            if os.path.exists(sim_dir):
-                shutil.rmtree(sim_dir)
-            os.mkdir(sim_dir)
+            if not calc_only:
+                if os.path.exists(sim_dir):
+                    shutil.rmtree(sim_dir)
+                os.mkdir(sim_dir)
             self._sim_dir = sim_dir
         self._fdtd = openEMS(EndCriteria=self._end_criteria)
         self._fdtd.SetGaussExcite(
@@ -146,7 +155,8 @@ class Simulation:
         """
         if csx:
             self.view_csx(prompt=True)
-        self.fdtd.Run(self.sim_dir, cleanup=False)
+        if not self._calc_only:
+            self.fdtd.Run(self.sim_dir, cleanup=False)
         self._calc_ports()
 
     def view_csx(self, prompt: bool = False) -> None:
