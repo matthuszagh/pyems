@@ -1,5 +1,5 @@
 import numpy as np
-from pyems.utilities import (
+from pyems.calc import (
     microstrip_effective_dielectric,
     phase_shift_length,
     skin_depth,

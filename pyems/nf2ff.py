@@ -1,6 +1,7 @@
 import numpy as np
 from pyems.coordinate import Coordinate3
-from pyems.utilities import wavelength, array_index
+from pyems.utilities import array_index
+from pyems.calc import wavelength
 
 
 class NF2FF:

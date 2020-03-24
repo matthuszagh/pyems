@@ -5,7 +5,7 @@ import numpy as np
 import scipy.optimize
 from CSXCAD.CSPrimitives import CSPrimitives
 from pyems.simulation import Simulation
-from pyems.utilities import wavelength
+from pyems.calc import wavelength
 from pyems.coordinate import Box3, Coordinate3
 
 PRECISION = 10

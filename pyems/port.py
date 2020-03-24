@@ -45,16 +45,11 @@ from pyems.simulation import Simulation
 from pyems.coordinate import Box3, Coordinate3, Axis
 from pyems.mesh import Mesh
 from pyems.probe import Probe
-from pyems.utilities import wavenumber, array_index
+from pyems.utilities import array_index
+from pyems.calc import wavenumber
 from pyems.feed import Feed
 from pyems.priority import priorities
-
-
-C0 = 299792458  # m/s
-MUE0 = 4e-7 * np.pi  # N/A^2
-EPS0 = 1 / (MUE0 * C0 ** 2)  # F/m
-# free space wave impedance
-Z0 = np.sqrt(MUE0 / EPS0)  # Ohm
+from pyems.physical_constant import Z0
 
 
 class Port(ABC):
