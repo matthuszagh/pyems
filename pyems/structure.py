@@ -70,7 +70,8 @@ def _set_box(
     position.
     """
     box = prop.AddBox(priority=priority, start=start, stop=stop)
-    apply_transform(box, transform)
+    if transform is not None:
+        apply_transform(box, transform)
     translate = CSTransform()
     translate.AddTransform("Translate", position.coordinate_list())
     apply_transform(box, translate)
@@ -1369,6 +1370,12 @@ class Miter(Structure):
         """
         return self._transform
 
+    @property
+    def miter(self) -> float:
+        """
+        """
+        return self._miter
+
     def corner_length(self) -> float:
         """
         """
@@ -1568,6 +1575,10 @@ common_smd_passives = {
 class SMDPassive(Structure):
     """
     Small surface-mount capacitor, resistor, or inductor.
+
+    SMD Passives do not support transforms, since the resistive,
+    capacitive and inductive elements must specified in a direction
+    parallel to a coordinate axis.
     """
 
     unique_index = 0
@@ -1576,6 +1587,7 @@ class SMDPassive(Structure):
         self,
         pcb: PCB,
         position: Coordinate2,
+        axis: Axis,
         dimensions: SMDPassiveDimensions,
         pad_width: float,
         pad_length: float,
@@ -1587,13 +1599,14 @@ class SMDPassive(Structure):
         gnd_cutout_width: float = 0,
         gnd_cutout_length: float = 0,
         taper: Taper = None,
-        transform: CSTransform = None,
     ):
         """
         :param pcb: PCB object to which this SMD will be added.
         :param position: Position of the center of the SMD passive on
             the PCB.  This can be set to None, in which case construct
             will need to be called manually to create the SMD.
+        :param axis: Signal propagation axis.  Necessary to set the
+            resistive, capacitive and inductive values.
         :param dimensions: SMD passive dimensions.  Use meters, rather
             than simulation default unit.
         :param pad_width: SMD pad width.
@@ -1613,10 +1626,12 @@ class SMDPassive(Structure):
             proportion of length between the ends of the pads.
         :param taper: Taper the transition between the trace and SMD
             pad.  None means do not add a taper.
-        :param transform: Transform applied to SMD.
         """
         self._pcb = pcb
         self._position = position
+        if axis.axis == 2:
+            raise ValueError("Axis must either point in x or y-directions.")
+        self._axis = axis
         self._dimensions = dimensions
         self._dimensions.set_unit(self.pcb.sim.unit)
         self._pad_width = pad_width
@@ -1632,7 +1647,6 @@ class SMDPassive(Structure):
             pad_length + self._dimensions.length
         )
         self._taper = taper
-        self._transform = transform
 
         if self.position is not None:
             self.construct(self.position)
@@ -1642,12 +1656,6 @@ class SMDPassive(Structure):
         """
         """
         return self._position
-
-    @property
-    def transform(self) -> CSTransform:
-        """
-        """
-        return self._transform
 
     @property
     def dimensions(self) -> SMDPassiveDimensions:
@@ -1661,12 +1669,9 @@ class SMDPassive(Structure):
         """
         return self._pcb
 
-    def construct(
-        self, position: Coordinate2, transform: CSTransform = None
-    ) -> None:
+    def construct(self, position: Coordinate2) -> None:
         """
         """
-        self._transform = append_transform(self._transform, transform)
         self._position = position
         self._construct_pads()
         self._construct_smd()
@@ -1682,21 +1687,25 @@ class SMDPassive(Structure):
             conductivity=self.pcb.pcb_prop.metal_conductivity(),
             thickness=self.pcb.pcb_prop.copper_thickness(self._pcb_layer),
         )
+        prop_axis = self._axis.axis
+        orth_axis = self._orthogonal_axis().axis
         zpos = self._pad_elevation()
         for pad_middle in [
             -self.dimensions.length / 2,
             self.dimensions.length / 2,
         ]:
-            xmin = pad_middle - self._pad_length / 2
-            xmax = pad_middle + self._pad_length / 2
-            ymin = -self._pad_width / 2
-            ymax = self._pad_width / 2
+            start = [None, None, zpos]
+            stop = [None, None, zpos]
+            start[prop_axis] = pad_middle - self._pad_length / 2
+            stop[prop_axis] = pad_middle + self._pad_length / 2
+            start[orth_axis] = -self._pad_width / 2
+            stop[orth_axis] = self._pad_width / 2
             _set_box(
                 prop=pad_prop,
-                start=[xmin, ymin, zpos],
-                stop=[xmax, ymax, zpos],
+                start=start,
+                stop=stop,
                 position=Coordinate3(self.position.x, self.position.y, 0),
-                transform=self.transform,
+                transform=None,
                 priority=priorities["trace"],
             )
 
@@ -1704,23 +1713,28 @@ class SMDPassive(Structure):
         """
         """
         smd_prop = self.pcb.sim.csx.AddLumpedElement(
-            self._smd_name(), ny=0, caps=True, R=self._r, C=self._c, L=self._l
+            self._smd_name(),
+            ny=self._axis.axis,
+            caps=True,
+            R=self._r,
+            C=self._c,
+            L=self._l,
         )
+        prop_axis = self._axis.axis
+        orth_axis = self._orthogonal_axis().axis
+        start = [None, None, self._pad_elevation()]
+        stop = [None, None, self._pad_elevation() + self.dimensions.height]
+        start[prop_axis] = -self.dimensions.length / 2
+        stop[prop_axis] = self.dimensions.length / 2
+        start[orth_axis] = -self.dimensions.width / 2
+        stop[orth_axis] = self.dimensions.width / 2
         _set_box(
             prop=smd_prop,
-            start=[
-                -self.dimensions.length / 2,
-                -self.dimensions.width / 2,
-                self._pad_elevation(),
-            ],
-            stop=[
-                self.dimensions.length / 2,
-                self.dimensions.width / 2,
-                self._pad_elevation() + self.dimensions.height,
-            ],
+            start=start,
+            stop=stop,
             position=Coordinate3(self.position.x, self.position.y, 0),
-            transform=self.transform,
-            priority=priorities["trace"],
+            transform=None,
+            priority=priorities["trace"] - 1,
         )
 
     def _construct_gap(self) -> None:
@@ -1729,11 +1743,17 @@ class SMDPassive(Structure):
         if self._gap is None:
             return
 
-        xmin = -(self.dimensions.length / 2) - (self._pad_length / 2)
-        xmax = (self.dimensions.length / 2) + (self._pad_length / 2)
-        ymin = -(self.dimensions.width / 2) - self._gap
-        ymax = (self.dimensions.width / 2) + self._gap
+        prop_axis = self._axis.axis
+        orth_axis = self._orthogonal_axis().axis
         zpos = self._pad_elevation()
+        start = [None, None, zpos]
+        stop = [None, None, zpos]
+        start[prop_axis] = -(self.dimensions.length / 2) - (
+            self._pad_length / 2
+        )
+        stop[prop_axis] = (self.dimensions.length / 2) + (self._pad_length / 2)
+        start[orth_axis] = -(self.dimensions.width / 2) - self._gap
+        stop[orth_axis] = (self.dimensions.width / 2) + self._gap
 
         ref_freq = self.pcb.sim.reference_frequency
         gap_prop = self.pcb.sim.csx.AddMaterial(
@@ -1743,10 +1763,10 @@ class SMDPassive(Structure):
         )
         _set_box(
             prop=gap_prop,
-            start=[xmin, ymin, zpos],
-            stop=[xmax, ymax, zpos],
+            start=start,
+            stop=stop,
             position=Coordinate3(self.position.x, self.position.y, 0),
-            transform=self.transform,
+            transform=None,
             priority=priorities["keepout"],
         )
 
@@ -1755,11 +1775,16 @@ class SMDPassive(Structure):
         """
         if self._gnd_cutout_length == 0 or self._gnd_cutout_width == 0:
             return
-        xmin = -(self._gnd_cutout_length / 2)
-        xmax = self._gnd_cutout_length / 2
-        ymin = -(self._gnd_cutout_width / 2)
-        ymax = self._gnd_cutout_width / 2
+
+        prop_axis = self._axis.axis
+        orth_axis = self._orthogonal_axis().axis
         zpos = self._gnd_elevation()
+        start = [None, None, zpos]
+        stop = [None, None, zpos]
+        start[prop_axis] = -(self._gnd_cutout_length / 2)
+        stop[prop_axis] = self._gnd_cutout_length / 2
+        start[orth_axis] = -(self._gnd_cutout_width / 2)
+        stop[orth_axis] = self._gnd_cutout_width / 2
 
         ref_freq = self.pcb.sim.reference_frequency
         cutout_prop = self.pcb.sim.csx.AddMaterial(
@@ -1769,10 +1794,10 @@ class SMDPassive(Structure):
         )
         _set_box(
             prop=cutout_prop,
-            start=[xmin, ymin, zpos],
-            stop=[xmax, ymax, zpos],
+            start=start,
+            stop=stop,
             position=Coordinate3(self.position.x, self.position.y, 0),
-            transform=self.transform,
+            transform=None,
             priority=priorities["keepout"],
         )
 
@@ -1797,10 +1822,28 @@ class SMDPassive(Structure):
             self.position.y,
         )
 
-        tr = CSTransform()
-        tr.AddTransform("RotateAxis", "z", 180)
-        self._taper.construct(pos1)
-        self._taper.construct(pos2, tr)
+        if self._axis.axis == 1:
+            tr1 = CSTransform()
+            tr1.AddTransform("RotateAxis", "z", 90)
+            self._taper.construct(pos1, tr1)
+            tr2 = CSTransform()
+            tr2.AddTransform("RotateAxis", "z", 90)
+            tr2.AddTransform("RotateAxis", "z", 180)
+            self._taper.construct(pos2, tr2)
+        else:
+            tr = CSTransform()
+            tr.AddTransform("RotateAxis", "z", 180)
+            self._taper.construct(pos1)
+            self._taper.construct(pos2, tr)
+
+    def _orthogonal_axis(self) -> Axis:
+        """
+        Axis in the PCB plane orthogonal to the propagation axis.
+        """
+        prop_axis = self._axis.axis
+        axes = [Axis("x"), Axis("y")]
+        del axes[prop_axis]
+        return axes[0]
 
     def _smd_name(self) -> str:
         """
@@ -2003,11 +2046,18 @@ class Coax(Structure):
         if self._transform is not None:
             raise ValueError("Ports do not support transforms.")
 
+        if self._propagation_axis.direction == 1:
+            start = self._start()
+            stop = self._stop()
+        else:
+            start = self._stop()
+            stop = self._start()
+
         CoaxPort(
             sim=self.sim,
             number=self._port_number,
-            start=self._start(),
-            stop=self._stop(),
+            start=start,
+            stop=stop,
             radius=self._radius,
             core_radius=self._core_radius,
             excite=self._excite,
@@ -2068,8 +2118,8 @@ class Coax(Structure):
         """
         """
         prop_axis = self._propagation_axis.intval()
-        pos = [0, 0, 0]
-        pos[prop_axis] = -self._length / 2
+        pos = self._position.coordinate_list()
+        pos[prop_axis] -= self._length / 2
         if self._transform is not None:
             pos = self._transform.Transform(pos)
         return Coordinate3(pos[0], pos[1], pos[2])
@@ -2078,8 +2128,8 @@ class Coax(Structure):
         """
         """
         prop_axis = self._propagation_axis.intval()
-        pos = [0, 0, 0]
-        pos[prop_axis] = self._length / 2
+        pos = self._position.coordinate_list()
+        pos[prop_axis] += self._length / 2
         if self._transform is not None:
             pos = self._transform.Transform(pos)
         return Coordinate3(pos[0], pos[1], pos[2])
