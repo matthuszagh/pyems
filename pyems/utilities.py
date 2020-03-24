@@ -5,7 +5,7 @@ import numpy as np
 from CSXCAD.CSXCAD import ContinuousStructure
 from CSXCAD.CSPrimitives import CSPrimitives
 from CSXCAD.CSTransform import CSTransform
-from pyems.physical_constant import C0
+from pyems.physical_constant import C0, MUE0
 
 
 # TODO should set max precision instead of precision list. Precision
@@ -270,3 +270,55 @@ def mm_to_mil(mm_val: float) -> float:
     """
     """
     return mm_val / 0.0254
+
+
+def microstrip_effective_dielectric(
+    substrate_dielectric: float, substrate_height: float, trace_width: float
+) -> float:
+    """
+    Compute the effective dielectric for a microstrip trace.  This
+    represents the dielectric constant for a homogenous medium that
+    replaces the air and substrate.  See Pozar 4e p.148 for details.
+
+    :param substrate_dielectric: Dielectric constant of the PCB
+        substrate.
+    :param substrate_height: Distance between the backing ground plane
+        and microstrip trace.
+    :param trace_width: Microstrip trace width.  Any units can be used
+        for substrate_height and trace_width as long as they are
+        consistent.
+    """
+    return ((substrate_dielectric + 1) / 2) + (
+        ((substrate_dielectric - 1) / 2)
+        * (1 / np.sqrt(1 + (12 * substrate_height / trace_width)))
+    )
+
+
+def phase_shift_length(
+    phase_shift: float, dielectric: float, frequency: float
+) -> float:
+    """
+    Compute the length (in mm) for a signal to undergo a given phase
+    shift.  When computing this value for a transmission line not
+    surrounded by a homogenous medium (e.g. a microstrip trace), make
+    sure to use the effective dielectric.
+
+    :param phase_shift: Phase shift in degrees.
+    :param dielectric: Dielectric or effective dielectric constant.
+    :param frequency: Signal frequency.
+    """
+    rad = phase_shift * np.pi / 180
+    vac_lambda = 2 * np.pi * frequency / speed_of_light(unit=1e-3)
+    return rad / (np.sqrt(dielectric) * vac_lambda)
+
+
+def skin_depth(
+    frequency: float, resistivity: float = 1.68e-8, rel_permeability: float = 1
+) -> float:
+    """
+    Compute the skin depth for a conductor at a given frequency.  The
+    default values are for copper.
+    """
+    return np.sqrt(
+        2 * resistivity / (2 * np.pi * frequency * rel_permeability * MUE0)
+    )
