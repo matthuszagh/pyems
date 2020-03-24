@@ -1423,6 +1423,9 @@ class Miter(Structure):
     def _construct_gap(self) -> None:
         """
         """
+        if self._gap is None:
+            return
+
         ref_freq = self.pcb.sim.reference_frequency
         prop = self.pcb.sim.csx.AddMaterial(
             self._gap_name(),
