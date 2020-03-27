@@ -708,6 +708,7 @@ class Microstrip(Structure):
         shorten_via_wall: Tuple[float, float] = (0, 0),
         port_number: int = None,
         excite: bool = False,
+        invert_excitation: bool = False,
         feed_impedance: float = None,
         feed_shift: float = 0.2,
         ref_impedance: float = None,
@@ -768,6 +769,8 @@ class Microstrip(Structure):
             with it).
         :param excite: Set to True if the microstrip is a port and
             should have an associated excitation.
+        :param invert_excitation: If True, flip the excitation to be
+            in the opposite direction.
         :param feed_impedance: See PlanarPort.
         :param feed_shift: See PlanarPort.
         :param ref_impedance: See PlanarPort.
@@ -793,6 +796,7 @@ class Microstrip(Structure):
         self._shorten_via_wall = shorten_via_wall
         self._port_number = port_number
         self._excite = excite
+        self._invert_excitation = invert_excitation
         self._feed_impedance = feed_impedance
         self._feed_shift = feed_shift
         self._ref_impedance = ref_impedance
@@ -1024,6 +1028,8 @@ class Microstrip(Structure):
         """
         """
         direction = int(np.sign(self._gnd_layer - self._trace_layer))
+        if self._invert_excitation:
+            direction *= -1
         return Axis("z", direction)
 
     def _propagation_direction(self) -> int:
