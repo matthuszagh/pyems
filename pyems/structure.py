@@ -684,9 +684,9 @@ class Via(Structure):
 class Microstrip(Structure):
     """
     Microstrip transmission line structure.  This can also be set to
-    act as a port for later analysis.  When used as a port, the
-    microstrip cannot be transformed, since ports do not support
-    transformations.
+    act as a port for excitation and/or later analysis.  When used as
+    a port, the microstrip cannot be transformed, since ports do not
+    support transformations.
     """
 
     unique_index = 0
@@ -700,9 +700,9 @@ class Microstrip(Structure):
         propagation_axis: Axis,
         trace_layer: int = 0,
         gnd_layer: int = 1,
-        gnd_gap: float = None,
-        via_gap: float = None,
-        terminal_gaps: Tuple[bool] = (False, False),
+        gnd_gap: Tuple[float, float] = (None, None),
+        via_gap: Tuple[float, float] = (None, None),
+        terminal_gap: Tuple[float, float] = (None, None),
         via: Via = None,
         via_spacing: float = None,
         shorten_via_wall: Tuple[float, float] = (0, 0),
@@ -730,16 +730,25 @@ class Microstrip(Structure):
         :param gnd_layer: PCB layer of the ground plane.  Uses copper
             layer index values.
         :param gnd_gap: Gap distance between trace edge and
-            surrounding coplanar ground plane.  If left as the default
-            value of None, no gap will be set.  Ensure the copper
-            plane is removed from the trace layer if this is the case.
+            surrounding coplanar ground plane.  This is passed as a
+            tuple of two floats, specifying the gap for each side of
+            the microstrip.  The first value gives the gap distance of
+            the lower edge (smaller coordinate system value) and the
+            second value gives the gap distance at the upper edge.  In
+            other words, the order is not affected by the propagation
+            direction.  If either value is left as the default value
+            of None, no gap will be set.  Ensure the copper plane is
+            removed from the trace layer if this is the case.
         :param via_gap: Gap distance between the start of the coplanar
-            ground plane and the surrounding via fence.  If set to
-            None, a via fence is not used.
-        :param terminal_gaps: Adds ground gaps to the ends of the
-            microstrip trace.  Provided as a tuple of 2 booleans,
-            indicating whether to add gaps to the start and stop of
-            the microstrip, respectively.
+            ground plane and the surrounding via fence.  This uses the
+            same format as `gnd_gap`.  If set to None, a via fence is
+            not used.
+        :param terminal_gap: Adds ground gaps to the ends of the
+            microstrip trace.  Provided as a tuple of 2 floats, where
+            the first value gives the gap at the lower edge and the
+            second value gives the gap at the upper edge.  Like
+            `gnd_gap` and `via_gap` the order is independent of the
+            propagation axis.  A value of None sets no terminal gap.
         :param via: Via object to use for the via fence.  If set to
             None and a via_gap is specified, an unbroken metal sheet
             is used to approximate the via fence.  This can reduce
@@ -774,11 +783,11 @@ class Microstrip(Structure):
         self._trace_layer = trace_layer
         self._gnd_layer = gnd_layer
         self._gnd_gap = gnd_gap
-        if gnd_gap is None:
-            self._via_gap = None
-        else:
-            self._via_gap = via_gap
-        self._terminal_gaps = terminal_gaps
+        self._via_gap = via_gap
+        for i in range(2):
+            if gnd_gap[i] is None:
+                self._via_gap[i] = None
+        self._terminal_gap = terminal_gap
         self._via = via
         self._via_spacing = via_spacing
         self._shorten_via_wall = shorten_via_wall
@@ -886,7 +895,9 @@ class Microstrip(Structure):
     def _construct_gap(self) -> None:
         """
         """
-        if self._gnd_gap is None:
+        if all(gap is None for gap in self._gnd_gap) and all(
+            gap is None for gap in self._terminal_gap
+        ):
             return
 
         freq = self.pcb.sim.reference_frequency
@@ -906,18 +917,15 @@ class Microstrip(Structure):
         start[perp_axis] = -self._width / 2
         stop[perp_axis] = self._width / 2
 
-        start[perp_axis] -= self._gnd_gap
-        stop[perp_axis] += self._gnd_gap
-        if self._terminal_gaps[0]:
-            if self._propagation_axis.is_positive_direction():
-                start[prop_axis] -= self._gnd_gap
-            else:
-                stop[prop_axis] += self._gnd_gap
-        if self._terminal_gaps[1]:
-            if self._propagation_axis.is_positive_direction():
-                stop[prop_axis] += self._gnd_gap
-            else:
-                start[prop_axis] -= self._gnd_gap
+        if self._gnd_gap[0] is not None:
+            start[perp_axis] -= self._gnd_gap[0]
+        if self._gnd_gap[1] is not None:
+            stop[perp_axis] += self._gnd_gap[1]
+        if self._terminal_gap[0] is not None:
+            start[prop_axis] -= self._terminal_gap[0]
+        if self._terminal_gap[1] is not None:
+            stop[prop_axis] += self._terminal_gap[1]
+
         pos = Coordinate3(self.position.x, self.position.y, 0)
         _set_box(
             prop=gap_prop,
@@ -931,19 +939,22 @@ class Microstrip(Structure):
     def _construct_via_fence(self) -> None:
         """
         """
-        if self._via_gap is None:
+        if all(gap is None for gap in self._via_gap):
             return
 
-        perp_low, perp_high = self._via_perp_pos()
         if self._via is None:
-            self._construct_via_wall(perp_low)
-            self._construct_via_wall(perp_high)
+            if self._via_gap[0] is not None:
+                pos = -self._width / 2 - self._gnd_gap[0] - self._via_gap[0]
+                self._construct_via_wall(pos)
+            if self._via_gap[1] is not None:
+                pos = self._width / 2 + self._gnd_gap[1] + self._via_gap[1]
+                self._construct_via_wall(pos)
         else:
-            # TODO
             raise RuntimeError(
-                "Vias for via fence have not yet been properly "
+                "TODO: Vias for via fence have not yet been properly "
                 "setup for transforms."
             )
+            perp_low, perp_high = self._via_perp_pos()
             prop_axis = self._propagation_axis.axis
             perp_axis = self._trace_perpendicular_axis().axis
             prop_max = self.box.max_corner[prop_axis]
@@ -1115,6 +1126,40 @@ class Microstrip(Structure):
         """
         """
         return self.pcb.copper_layer_elevation(self._gnd_layer)
+
+
+class DifferentialMicrostrip(Structure):
+    """
+    """
+
+    def __init__(
+        self,
+        pcb: PCB,
+        position: Coordinate2,
+        length: float,
+        width: float,
+        gap: float,
+        propagation_axis: Axis,
+        trace_layer: int = 0,
+        gnd_layer: int = 1,
+        gnd_gap: Tuple[float, float] = (None, None),
+        via_gap: Tuple[float, float] = (None, None),
+        terminal_gap: Tuple[float, float] = (None, None),
+        via: Via = None,
+        via_spacing: float = None,
+        shorten_via_wall: Tuple[float, float] = (0, 0),
+        port_number: int = None,
+        excite: bool = False,
+        feed_impedance: float = None,
+        feed_shift: float = 0.2,
+        ref_impedance: float = None,
+        measurement_shift: float = 0.5,
+        transform: CSTransform = None,
+    ):
+        """
+        :param gap: Separation between microstrip lines, measured from
+            the inner trace edges.
+        """
 
 
 class Taper(Structure):
