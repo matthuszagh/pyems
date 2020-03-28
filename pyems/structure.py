@@ -786,10 +786,11 @@ class Microstrip(Structure):
         self._trace_layer = trace_layer
         self._gnd_layer = gnd_layer
         self._gnd_gap = gnd_gap
-        self._via_gap = via_gap
+        self._via_gap = [None, None]
         for i in range(2):
-            if gnd_gap[i] is None:
-                self._via_gap[i] = None
+            if gnd_gap[i] is not None:
+                self._via_gap[i] = via_gap[i]
+        self._via_gap = tuple(via_gap)
         self._terminal_gap = terminal_gap
         self._via = via
         self._via_spacing = via_spacing
