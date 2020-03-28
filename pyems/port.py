@@ -38,6 +38,7 @@ module takes the position that we can always modify probe positions
 after mesh generation.
 """
 
+from typing import Tuple
 from copy import deepcopy
 from abc import ABC, abstractmethod
 import numpy as np
@@ -144,6 +145,28 @@ class Port(ABC):
         if not self._data_readp():
             raise RuntimeError("Must call calc() before retreiving values.")
         return self.v_ref
+
+    def incident_current(self) -> np.array:
+        """
+        Get the incident current.
+
+        :returns: Array of the incident current magnitude for each
+            frequency bin.
+        """
+        if not self._data_readp():
+            raise RuntimeError("Must call calc() before retreiving values.")
+        return self.i_inc
+
+    def reflected_current(self) -> np.array:
+        """
+        Get the reflected current.
+
+        :returns: Array of the reflected current magnitude for each
+            frequency bin.
+        """
+        if not self._data_readp():
+            raise RuntimeError("Must call calc() before retreiving values.")
+        return self.i_ref
 
     def impedance(self, freq: float = None) -> np.array:
         """
@@ -284,10 +307,11 @@ class Port(ABC):
         if self._ref_impedance is None:
             self._ref_impedance = self.z0
 
-    def calc(self) -> None:
+    def _probe_vi(self) -> Tuple[np.array, np.array, np.array, np.array]:
         """
-        Calculate the characteristic impedance, propagation constant,
-        and incident and reflected power.
+        Read probe voltage and current values.
+
+        :returns: (v, i, dv, di)
         """
         [vprobe.read() for vprobe in self.vprobes]
         [iprobe.read() for iprobe in self.iprobes]
@@ -318,6 +342,15 @@ class Port(ABC):
                 - self.iprobes[0].box.min_corner[prop_axis]
             )
         )
+
+        return (v, i, dv, di)
+
+    def calc(self) -> None:
+        """
+        Calculate the characteristic impedance, propagation constant,
+        and incident and reflected power.
+        """
+        v, i, dv, di = self._probe_vi()
 
         self._calc_beta(v, i, dv, di)
         self._calc_z0(v, i, dv, di)
@@ -633,6 +666,392 @@ class MicrostripPort(Port):
         box.min_corner[prop_axis] = prop_pos
 
         return box
+
+
+class DifferentialMicrostripPort(Port):
+    """
+    """
+
+    def __init__(
+        self,
+        sim: Simulation,
+        box: Box3,
+        propagation_axis: Axis,
+        excitation_axis: Axis,
+        number: int,
+        gap: float,
+        thickness: float,
+        conductivity: float = 5.8e7,
+        excite: bool = False,
+        feed_impedance: float = None,
+        feed_shift: float = 0.2,
+        ref_impedance: float = None,
+        measurement_shift: float = 0.5,
+    ):
+        """
+        :param sim: Simulation to which microstrip port is added.
+        :param box: 3D box specifying the port dimensions.  This box
+            fully encompasses both microstrip traces.  The length of
+            each trace is identical and is equal to the length of the
+            box in the direction of `propagation_axis`.  The width of
+            the box in the direction of `excitation_axis` gives the
+            distance between the outer edges of each trace.  The size
+            of the box in the direction perpendicular to these two
+            gives the elevation of the differential pair and must have
+            size 0.  The order of coordinates in the box does not
+            matter, since the direction of the port is set by the
+            direction of `propagation_axis`.
+        :param propagation_axis: Specifies the coordinate axis and
+            direction in which the signal propagation occurs.
+        :param excitation_axis: Axis and direction of signal
+            excitation.  This should point from one trace to the other
+            trace.  In other words, `propagation_axis` and
+            `excitation_axis` (along with the box elevation) together
+            determine the plane in which the differential traces
+            reside.
+        :param gap: Separation between inner edges of microstrip
+            traces.
+        :param thickness: Metal trace thickness.  Units are whatever
+            you set the CSX unit to, defaults to m.
+        :param conductivity: Metal conductivity (in S/m).  The default
+            uses the conductivity of copper.
+        :param feed_impedance: The feeding impedance value.  The
+            default value of None creates an infinite impedance.  If
+            you use the default value ensure that the port is
+            terminated by a PML.  When performing a characteristic
+            impedance measurement use the default value and PML, which
+            gives better results than attempting to use a matching
+            impedance.
+        :param feed_shift: The amount by which to shift the feed as a
+            fraction of the total port length.  The final position
+            will be influenced by this value but adjusted for the mesh
+            used.
+        :param ref_impedance: The impedance used to calculate the port
+            voltage and current values.  If left as the default value
+            of None, the calculated characteristic impedance is used
+            to calculate these values.
+        :param measurement_shift: The amount by which to shift the
+            measurement probes as a fraction of the total port length.
+            By default, the measurement port is placed halfway between
+            the start and stop.  Like `feed_shift`, the final position
+            will be adjusted for the mesh used.  This is important
+            since voltage probes need to lie on mesh lines and current
+            probes need to be placed equidistant between them.
+        """
+        super().__init__(sim=sim, number=number, excite=excite)
+        self._box = box
+        self._box.set_increasing()
+        self._propagation_axis = propagation_axis
+        self._excitation_axis = excitation_axis
+        self._check_axes_perpendicular()
+        self._check_normal_axis_size()
+        self._gap = gap
+        self._thickness = thickness
+        self._conductivity = conductivity
+        self._feed_impedance = feed_impedance
+        self._feed_shift = feed_shift
+        self._ref_impedance = ref_impedance
+        self._measurement_shift = measurement_shift
+
+        self._set_traces()
+
+    def propagation_axis(self) -> Axis:
+        """
+        """
+        return self._propagation_axis
+
+    def _set_traces(self) -> None:
+        """
+        """
+        trace_prop = self._sim.csx.AddConductingSheet(
+            "Differential_Microstrip_Trace_" + str(self.number),
+            conductivity=self._conductivity,
+            thickness=self._thickness,
+        )
+        for box in self._trace_boxes():
+            trace_prop.AddBox(
+                priority=priorities["trace"],
+                start=box.start(),
+                stop=box.stop(),
+            )
+
+    def _trace_boxes(self) -> Tuple[Box3, Box3]:
+        """
+        """
+        lower_box = deepcopy(self._box)
+        upper_box = deepcopy(self._box)
+        excite_axis = self._excitation_axis.axis
+        trace_width = self._trace_width()
+
+        lower_box.max_corner[excite_axis] = (
+            lower_box.min_corner[excite_axis] + trace_width
+        )
+        upper_box.min_corner[excite_axis] = (
+            upper_box.max_corner[excite_axis] - trace_width
+        )
+
+        return (lower_box, upper_box)
+
+    def _trace_width(self) -> float:
+        """
+        """
+        box_width = (
+            self._box.max_corner[self._excitation_axis.axis]
+            - self._box.min_corner[self._excitation_axis.axis]
+        )
+        return (box_width - self._gap) / 2
+
+    def _normal_axis(self) -> Axis:
+        """
+        """
+        axes = [0, 1, 2]
+        axes.remove(self._propagation_axis.axis)
+        axes.remove(self._excitation_axis.axis)
+        return Axis(axes[0])
+
+    def _check_axes_perpendicular(self) -> None:
+        """
+        """
+        if self._propagation_axis.axis == self._excitation_axis.axis:
+            raise ValueError(
+                "Excitation and propagation axes must be perpendicular."
+            )
+
+    def _check_normal_axis_size(self) -> None:
+        """
+        """
+        normal_axis = self._normal_axis().axis
+        if (
+            self._box.max_corner[normal_axis]
+            != self._box.min_corner[normal_axis]
+        ):
+            raise ValueError(
+                "Size of box in direction normal to microstrip plane must be 0."
+            )
+
+    def _propagation_direction(self) -> int:
+        """
+        Get the direction of the signal propagation.
+        """
+        return self._propagation_axis.direction
+
+    def _excitation_direction(self) -> int:
+        """
+        Get the direction of the signal excitation.
+        """
+        return self._excitation_axis.direction
+
+    def _set_feed(self, mesh: Mesh) -> None:
+        """
+        Set excitation feed.
+        """
+        excite_type = None
+        if self.excite:
+            excite_type = 0
+
+        feed = Feed(
+            sim=self._sim,
+            box=self._feed_box(mesh),
+            excite_direction=self._excitation_axis.as_list(),
+            excite_type=excite_type,
+            impedance=self._feed_impedance,
+        )
+        self.feeds.append(feed)
+
+    def _feed_box(self, mesh: Mesh) -> Box3:
+        """
+        Get the excitation feed box.
+        """
+        box = deepcopy(self._box)
+        feed_axis = self._excitation_axis.axis
+        trace_width = self._trace_width()
+        box.max_corner[feed_axis] -= trace_width
+        box.min_corner[feed_axis] += trace_width
+        if not self._excitation_axis.is_positive_direction():
+            old_max = box.max_corner[feed_axis]
+            box.max_corner[feed_axis] = box.min_corner[feed_axis]
+            box.min_corner[feed_axis] = old_max
+
+        prop_axis = self._propagation_axis.axis
+        prop_dist = (
+            self._box.max_corner[prop_axis] - self._box.min_corner[prop_axis]
+        )
+        if self._propagation_axis.is_positive_direction():
+            _, prop_pos = mesh.nearest_mesh_line(
+                prop_axis,
+                self._box.min_corner[prop_axis]
+                + (self._feed_shift * prop_dist),
+            )
+        else:
+            _, prop_pos = mesh.nearest_mesh_line(
+                prop_axis,
+                self._box.max_corner[prop_axis]
+                - (self._feed_shift * prop_dist),
+            )
+
+        box.max_corner[prop_axis] = prop_pos
+        box.min_corner[prop_axis] = prop_pos
+
+        return box
+
+    def _set_probes(self, mesh: Mesh) -> None:
+        """
+        Set measurement probes.
+        """
+        prop_axis = self._propagation_axis.axis
+        excite_axis = self._excitation_axis.axis
+        normal_axis = self._normal_axis().axis
+        normal_pos = self._box.min_corner[normal_axis]
+        trace_width = self._trace_width()
+        excite_pos_lower = self._box.min_corner[excite_axis] + trace_width
+        excite_pos_upper = self._box.max_corner[excite_axis] - trace_width
+
+        prop_dist = (
+            self._box.max_corner[prop_axis] - self._box.min_corner[prop_axis]
+        )
+
+        if self._propagation_axis.is_positive_direction():
+            prop_index, _ = mesh.nearest_mesh_line(
+                prop_axis,
+                self._box.min_corner[prop_axis]
+                + (self._measurement_shift * prop_dist),
+            )
+        else:
+            prop_index, _ = mesh.nearest_mesh_line(
+                prop_axis,
+                self._box.max_corner[prop_axis]
+                - (self._measurement_shift * prop_dist),
+            )
+        mesh.set_lines_equidistant(0, prop_index - 1, prop_index + 1)
+
+        v_prop_pos = [
+            mesh.get_mesh_line(
+                prop_axis, prop_index - self._propagation_direction()
+            ),
+            mesh.get_mesh_line(prop_axis, prop_index),
+            mesh.get_mesh_line(
+                prop_axis, prop_index + self._propagation_direction()
+            ),
+        ]
+        i_prop_pos = [
+            (v_prop_pos[0] + v_prop_pos[1]) / 2,
+            (v_prop_pos[1] + v_prop_pos[2]) / 2,
+        ]
+
+        for idx in range(3):
+            box = Box3(
+                Coordinate3(None, None, None), Coordinate3(None, None, None)
+            )
+            box.min_corner[prop_axis] = v_prop_pos[idx]
+            box.max_corner[prop_axis] = v_prop_pos[idx]
+            box.min_corner[normal_axis] = normal_pos
+            box.max_corner[normal_axis] = normal_pos
+            box.min_corner[excite_axis] = excite_pos_lower
+            box.max_corner[excite_axis] = excite_pos_upper
+            self.vprobes.append(
+                Probe(
+                    sim=self._sim,
+                    box=box,
+                    p_type=0,
+                    weight=self._excitation_direction(),
+                )
+            )
+
+        for idx in range(2):
+            boxes = [None, None]
+            boxes[0] = Box3(
+                Coordinate3(None, None, None), Coordinate3(None, None, None)
+            )
+            boxes[1] = deepcopy(boxes[0])
+
+            for box in boxes:
+                box.min_corner[prop_axis] = i_prop_pos[idx]
+                box.max_corner[prop_axis] = i_prop_pos[idx]
+                box.min_corner[normal_axis] = normal_pos
+                box.max_corner[normal_axis] = normal_pos
+
+            boxes[0].min_corner[excite_axis] = (
+                self._box.max_corner[excite_axis] - trace_width
+            )
+            boxes[0].max_corner[excite_axis] = self._box.max_corner[
+                excite_axis
+            ]
+            boxes[1].min_corner[excite_axis] = self._box.min_corner[
+                excite_axis
+            ]
+            boxes[1].max_corner[excite_axis] = (
+                self._box.min_corner[excite_axis] + trace_width
+            )
+
+            for i, box in enumerate(boxes):
+                self.iprobes.append(
+                    Probe(
+                        sim=self._sim,
+                        box=box,
+                        p_type=1,
+                        normal_axis=self._propagation_axis,
+                        weight=-self._propagation_direction()
+                        * ((i + 1) ** -1),  # TODO negative prop direction??
+                    )
+                )
+
+    def _probe_vi(self) -> Tuple[np.array, np.array, np.array, np.array]:
+        """
+        Read probe voltage and current values.
+
+        :returns: (v, i, dv, di)
+        """
+        [vprobe.read() for vprobe in self.vprobes]
+        [iprobe.read() for iprobe in self.iprobes]
+        prop_axis = self.propagation_axis().axis
+        self._data_read = True
+        v = self.vprobes[1].get_freq_data()[1]
+        # TODO using both current probes gives slightly incorrect
+        # results for some unknown reason.
+        # # the currents on each trace should be exactly opposite, but
+        # # we use both just in case.
+        # i1 = 0.5 * (
+        #     self.iprobes[0].get_freq_data()[1]
+        #     - self.iprobes[1].get_freq_data()[1]
+        # )
+        # i2 = 0.5 * (
+        #     self.iprobes[2].get_freq_data()[1]
+        #     - self.iprobes[3].get_freq_data()[1]
+        # )
+        # i = 0.5 * (i1 + i2)
+        i = 0.5 * (
+            self.iprobes[0].get_freq_data()[1]
+            + self.iprobes[2].get_freq_data()[1]
+        )
+        dv = (
+            self.vprobes[2].get_freq_data()[1]
+            - self.vprobes[0].get_freq_data()[1]
+        ) / (
+            self.sim.unit
+            * np.abs(
+                self.vprobes[2].box.min_corner[prop_axis]
+                - self.vprobes[0].box.min_corner[prop_axis]
+            )
+        )
+        # di = (i2 - i1) / (
+        #     self.sim.unit
+        #     * np.abs(
+        #         self.iprobes[2].box.min_corner[prop_axis]
+        #         - self.iprobes[0].box.min_corner[prop_axis]
+        #     )
+        # )
+        di = (
+            self.iprobes[2].get_freq_data()[1]
+            - self.iprobes[0].get_freq_data()[1]
+        ) / (
+            self.sim.unit
+            * np.abs(
+                self.iprobes[2].box.min_corner[prop_axis]
+                - self.iprobes[0].box.min_corner[prop_axis]
+            )
+        )
+
+        return (v, i, dv, di)
 
 
 class CPWPort(Port):

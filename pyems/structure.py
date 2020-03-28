@@ -7,16 +7,15 @@ cylindrical shell, air cylinder, circular pads, etc.
 
 from abc import ABC, abstractmethod
 from typing import List, Tuple
-from copy import deepcopy
 import numpy as np
 from CSXCAD.CSTransform import CSTransform
 from CSXCAD.CSProperties import CSProperties
 from CSXCAD.CSPrimitives import CSPrimitives
 from pyems.pcb import PCBProperties
 from pyems.utilities import apply_transform, append_transform
-from pyems.coordinate import Coordinate2, Coordinate3, Axis, Box2, Box3
+from pyems.coordinate import Coordinate2, Coordinate3, Axis, Box3
 from pyems.simulation import Simulation
-from pyems.port import MicrostripPort, CoaxPort
+from pyems.port import MicrostripPort, CoaxPort, DifferentialMicrostripPort
 import pyems.calc as calc
 from pyems.priority import priorities
 from pyems.material import Dielectric
@@ -1139,6 +1138,8 @@ class DifferentialMicrostrip(Structure):
     """
     """
 
+    unique_index = 0
+
     def __init__(
         self,
         pcb: PCB,
@@ -1167,6 +1168,204 @@ class DifferentialMicrostrip(Structure):
         :param gap: Separation between microstrip lines, measured from
             the inner trace edges.
         """
+        self._pcb = pcb
+        self._position = position
+        self._length = length
+        self._width = width
+        self._gap = gap
+        self._propagation_axis = propagation_axis
+        self._check_propagation_axis()
+        self._trace_layer = trace_layer
+        self._gnd_layer = gnd_layer
+        self._gnd_gap = gnd_gap
+        self._via_gap = [None, None]
+        for i in range(2):
+            if gnd_gap[i] is not None:
+                self._via_gap[i] = via_gap[i]
+        self._via_gap = tuple(self._via_gap)
+        self._terminal_gap = terminal_gap
+        self._via = via
+        self._via_spacing = via_spacing
+        self._shorten_via_wall = shorten_via_wall
+        self._port_number = port_number
+        self._excite = excite
+        self._feed_impedance = feed_impedance
+        self._feed_shift = feed_shift
+        self._ref_impedance = ref_impedance
+        self._measurement_shift = measurement_shift
+        self._transform = transform
+        self._index = None
+
+        if self._position is not None:
+            self.construct(self._position)
+
+    def construct(
+        self, position: Coordinate2, transform: CSTransform = None
+    ) -> None:
+        """
+        """
+        self._position = position
+        self._transform = append_transform(self._transform, transform)
+        self._index = self._get_inc_ctr()
+        if self._port_number is not None:
+            if self._transform is not None:
+                raise ValueError("Ports do not support transforms.")
+            DifferentialMicrostripPort(
+                sim=self._pcb.sim,
+                box=self._port_box(),
+                propagation_axis=self._propagation_axis,
+                excitation_axis=self._excite_axis(),
+                number=self._port_number,
+                gap=self._gap,
+                thickness=self._pcb.pcb_prop.copper_thickness(
+                    self._trace_layer
+                ),
+                conductivity=self._pcb.pcb_prop.metal_conductivity(),
+                excite=self._excite,
+                feed_impedance=self._feed_impedance,
+                feed_shift=self._feed_shift,
+                ref_impedance=self._ref_impedance,
+                measurement_shift=self._measurement_shift,
+            )
+            # TODO need to construct via wall
+        else:
+            positions = self._trace_positions()
+            for i, pos in enumerate(positions):
+                via_gap = [None, None]
+                via_gap[i] = self._via_gap[i]
+
+                Microstrip(
+                    pcb=self._pcb,
+                    position=pos,
+                    length=self._length,
+                    width=self._width,
+                    propagation_axis=self._propagation_axis,
+                    trace_layer=self._trace_layer,
+                    gnd_layer=self._gnd_layer,
+                    gnd_gap=(None, None),
+                    via_gap=tuple(via_gap),
+                    terminal_gap=(None, None),
+                    via=self._via,
+                    via_spacing=self._via_spacing,
+                    shorten_via_wall=self._shorten_via_wall,
+                    transform=self._transform,
+                )
+
+        self._construct_gap()
+
+    def _construct_gap(self) -> None:
+        """
+        """
+        freq = self._pcb.sim.reference_frequency
+        gap_prop = self._pcb.sim.csx.AddMaterial(
+            self._gap_name(),
+            epsilon=self._pcb.pcb_prop.substrate.epsr_at_freq(freq),
+            kappa=self._pcb.pcb_prop.substrate.kappa_at_freq(freq),
+        )
+        elevation = self._trace_elevation()
+        prop_axis = self._propagation_axis.axis
+        excite_axis = self._excite_axis().axis
+        box = Box3(
+            Coordinate3(None, None, elevation),
+            Coordinate3(None, None, elevation),
+        )
+
+        box.min_corner[prop_axis] = -self._length / 2
+        if self._terminal_gap[0] is not None:
+            box.min_corner[prop_axis] -= self._terminal_gap[0]
+        box.max_corner[prop_axis] = self._length / 2
+        if self._terminal_gap[1] is not None:
+            box.max_corner[prop_axis] += self._terminal_gap[1]
+
+        box.min_corner[excite_axis] = -self._gap / 2
+        if self._gnd_gap[0] is not None:
+            box.min_corner[excite_axis] -= self._width + self._gnd_gap[0]
+        box.max_corner[excite_axis] = self._gap / 2
+        if self._gnd_gap[1] is not None:
+            box.max_corner[excite_axis] += self._width + self._gnd_gap[1]
+
+        _set_box(
+            prop=gap_prop,
+            start=box.start(),
+            stop=box.stop(),
+            position=Coordinate3(self._position.x, self._position.y, 0),
+            transform=self._transform,
+            priority=priorities["keepout"],
+        )
+
+    def _trace_positions(self) -> Tuple[Coordinate2, Coordinate2]:
+        """
+        """
+        lower_pos = Coordinate2(None, None)
+        upper_pos = Coordinate2(None, None)
+        prop_axis = self._propagation_axis.axis
+        excite_axis = self._excite_axis().axis
+
+        lower_pos[prop_axis] = self._position[prop_axis]
+        upper_pos[prop_axis] = self._position[prop_axis]
+
+        lower_pos[excite_axis] = (
+            self._position[excite_axis] - self._gap / 2 - self._width / 2
+        )
+        upper_pos[excite_axis] = (
+            self._position[excite_axis] + self._gap / 2 + self._width / 2
+        )
+
+    def _check_propagation_axis(self) -> None:
+        """
+        """
+        if self._propagation_axis.axis == 2:
+            raise ValueError(
+                "Invalid propagation axis. Must be in either "
+                "the x or y directions."
+            )
+
+    def _normal_axis(self) -> Axis:
+        """
+        """
+        return Axis("z")
+
+    def _excite_axis(self) -> Axis:
+        """
+        """
+        axes = [0, 1]
+        axes.remove(self._propagation_axis.axis)
+        return Axis(axes[0])
+
+    def _port_box(self) -> Box3:
+        """
+        """
+        elevation = self._trace_elevation()
+        box = Box3(
+            Coordinate3(None, None, elevation),
+            Coordinate3(None, None, elevation),
+        )
+        prop_axis = self._propagation_axis.axis
+        excite_axis = self._excite_axis().axis
+        box.min_corner[prop_axis] = (
+            self._position[prop_axis] - self._length / 2
+        )
+        box.max_corner[prop_axis] = (
+            self._position[prop_axis] + self._length / 2
+        )
+        box.min_corner[excite_axis] = (
+            self._position[prop_axis] - self._width - self._gap / 2
+        )
+        box.max_corner[excite_axis] = (
+            self._position[prop_axis] + self._width + self._gap / 2
+        )
+
+        return box
+
+    def _trace_elevation(self) -> float:
+        """
+        """
+        return self._pcb.copper_layer_elevation(self._trace_layer)
+
+    def _gap_name(self) -> str:
+        """
+        """
+        return "differential_microstrip_gap_" + str(self._index)
 
 
 class Taper(Structure):
