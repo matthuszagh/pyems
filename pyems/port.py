@@ -341,12 +341,9 @@ class Port(ABC):
         return self._data_read
 
 
-class PlanarPort(Port):
+class MicrostripPort(Port):
     """
-    Base class for planar ports (e.g. microstrip, coplanar waveguide,
-    stripline, etc.).  Planar ports differ from one another in terms
-    of the number, shape and position of their feeding and measurement
-    probes.
+    Microstrip transmission line port.
     """
 
     def __init__(
@@ -365,7 +362,7 @@ class PlanarPort(Port):
         measurement_shift: float = 0.5,
     ):
         """
-        :param sim: Simulation to which planar port is added.
+        :param sim: Simulation to which microstrip port is added.
         :param box: 3D box specifying the port dimensions.  The trace
             dimensions are given by the rectangle perpendicular to the
             `excitation_axis` and at the max value for that excitation
@@ -496,20 +493,6 @@ class PlanarPort(Port):
             return Axis(trace_perp_axis)
         else:
             return Axis(trace_perp_axis, -1)
-
-    @abstractmethod
-    def _set_probes(self, mesh: Mesh) -> None:
-        pass
-
-    @abstractmethod
-    def _set_feed(self, mesh: Mesh) -> None:
-        pass
-
-
-class MicrostripPort(PlanarPort):
-    """
-    Microstrip transmission line port.
-    """
 
     def _set_feed(self, mesh: Mesh) -> None:
         """
@@ -652,7 +635,7 @@ class MicrostripPort(PlanarPort):
         return box
 
 
-class CPWPort(PlanarPort):
+class CPWPort(Port):
     """
     Coplanar waveguide transmission line port.
     """
@@ -675,7 +658,7 @@ class CPWPort(PlanarPort):
         """
         self.gap = gap
         raise RuntimeError(
-            "CPWPort is not correctly implemented. "
+            "TODO CPWPort is not correctly implemented. "
             "See MicrostripPort for guidance on how to implement correctly."
         )
         super().__init__(
