@@ -1227,7 +1227,7 @@ class DifferentialMicrostrip(Structure):
                 ref_impedance=self._ref_impedance,
                 measurement_shift=self._measurement_shift,
             )
-            # TODO need to construct via wall
+            self._construct_via_fence()
         else:
             positions = self._trace_positions()
             for i, pos in enumerate(positions):
@@ -1252,6 +1252,92 @@ class DifferentialMicrostrip(Structure):
                 )
 
         self._construct_gap()
+
+    def _construct_via_fence(self) -> None:
+        """
+        TODO this should not be duplicated from Microstrip.
+        """
+        if all(gap is None for gap in self._via_gap):
+            return
+
+        if self._via is None:
+            if self._via_gap[0] is not None:
+                pos = (
+                    -self._gap / 2
+                    - self._width
+                    - self._gnd_gap[0]
+                    - self._via_gap[0]
+                )
+                self._construct_via_wall(pos)
+            if self._via_gap[1] is not None:
+                pos = (
+                    self._gap / 2
+                    + self._width
+                    + self._gnd_gap[1]
+                    + self._via_gap[1]
+                )
+                self._construct_via_wall(pos)
+        else:
+            raise RuntimeError(
+                "TODO: Vias for via fence have not yet been properly "
+                "setup for transforms."
+            )
+            perp_low, perp_high = self._via_perp_pos()
+            prop_axis = self._propagation_axis.axis
+            perp_axis = self._trace_perpendicular_axis().axis
+            prop_max = self._box.max_corner[prop_axis]
+            bound_spacing = self._via_spacing / 2
+            prop_pos = self._box.min_corner[prop_axis] + bound_spacing
+            via_rad = self._via.pad_radius()
+            while prop_pos + via_rad < prop_max:
+                pos_low = Coordinate2(None, None)
+                pos_low[prop_axis] = prop_pos
+                pos_low[perp_axis] = perp_low
+
+                pos_high = Coordinate2(None, None)
+                pos_high[prop_axis] = prop_pos
+                pos_high[perp_axis] = perp_high
+
+                self._via.construct(pos_low)
+                self._via.construct(pos_high)
+                prop_pos += self._via_spacing
+
+    def _construct_via_wall(self, perp_pos: float) -> None:
+        """
+        """
+        via_prop = self._pcb.sim.csx.AddConductingSheet(
+            self._via_wall_name(),
+            conductivity=self._pcb.pcb_prop.metal_conductivity(),
+            thickness=self._pcb.pcb_prop.copper_thickness(0),
+        )
+
+        prop_axis = self._propagation_axis.axis
+        perp_axis = self._excite_axis().axis
+        start = [
+            None,
+            None,
+            self._pcb.copper_layer_elevation(self._pcb.copper_layers()[-1]),
+        ]
+        start[prop_axis] = -self._length / 2 + self._shorten_via_wall[0]
+        start[perp_axis] = perp_pos
+
+        stop = [
+            None,
+            None,
+            self._pcb.copper_layer_elevation(self._pcb.copper_layers()[0]),
+        ]
+        stop[prop_axis] = self._length / 2 - self._shorten_via_wall[1]
+        stop[perp_axis] = perp_pos
+
+        pos = Coordinate3(self._position.x, self._position.y, 0)
+        _set_box(
+            prop=via_prop,
+            start=start,
+            stop=stop,
+            position=pos,
+            transform=self._transform,
+            priority=priorities["ground"],
+        )
 
     def _construct_gap(self) -> None:
         """
@@ -1366,6 +1452,11 @@ class DifferentialMicrostrip(Structure):
         """
         """
         return "differential_microstrip_gap_" + str(self._index)
+
+    def _via_wall_name(self) -> str:
+        """
+        """
+        return "via_wall_" + str(self._index)
 
 
 class Taper(Structure):
