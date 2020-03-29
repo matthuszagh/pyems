@@ -1435,10 +1435,10 @@ class DifferentialMicrostrip(Structure):
             self._position[prop_axis] + self._length / 2
         )
         box.min_corner[excite_axis] = (
-            self._position[prop_axis] - self._width - self._gap / 2
+            self._position[excite_axis] - self._width - self._gap / 2
         )
         box.max_corner[excite_axis] = (
-            self._position[prop_axis] + self._width + self._gap / 2
+            self._position[excite_axis] + self._width + self._gap / 2
         )
 
         return box
