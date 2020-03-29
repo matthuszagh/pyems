@@ -2079,7 +2079,7 @@ class SMDPassive(Structure):
             stop=stop,
             position=Coordinate3(self.position.x, self.position.y, 0),
             transform=None,
-            priority=priorities["trace"] - 1,
+            priority=priorities["component"],
         )
 
     def _construct_gap(self) -> None:
