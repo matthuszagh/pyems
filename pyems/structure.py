@@ -2097,8 +2097,8 @@ class SMDPassive(Structure):
             self._pad_length / 2
         )
         stop[prop_axis] = (self.dimensions.length / 2) + (self._pad_length / 2)
-        start[orth_axis] = -(self.dimensions.width / 2) - self._gap
-        stop[orth_axis] = (self.dimensions.width / 2) + self._gap
+        start[orth_axis] = -(self._pad_width / 2) - self._gap
+        stop[orth_axis] = (self._pad_width / 2) + self._gap
 
         ref_freq = self.pcb.sim.reference_frequency
         gap_prop = self.pcb.sim.csx.AddMaterial(
