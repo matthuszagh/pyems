@@ -159,6 +159,24 @@ def _set_cylindrical_shell(
     apply_transform(cyl, translate)
 
 
+def _via_noconnect_layers(
+    layers: List[int], noconnect_layers: List[int]
+) -> List[int]:
+    """
+    """
+    valid_layers = []
+    for noconnect_layer in noconnect_layers:
+        if noconnect_layer in layers:
+            valid_layers.append(noconnect_layer)
+        else:
+            raise RuntimeWarning(
+                "Via no-connect layer specified for layer where via "
+                "isn't present. No-connect for layer {} will be "
+                "ignored. Check your code.".format(noconnect_layer)
+            )
+    return valid_layers
+
+
 class Structure(ABC):
     """
     Base class for all other structures.  Provides the capability to
@@ -511,7 +529,9 @@ class Via(Structure):
                 layers[0] + self.pcb.copper_layers()[0],
                 layers[-1] + self.pcb.copper_layers()[0] + 1,
             )
-        self._noconnect_layers = self._set_noconnect_layers(noconnect_layers)
+        self._noconnect_layers = _via_noconnect_layers(
+            self._layers, noconnect_layers
+        )
         self._fill = fill
         self._index = None
 
@@ -535,21 +555,6 @@ class Via(Structure):
         """
         """
         return self._position
-
-    def _set_noconnect_layers(self, layers: List[int]) -> List[int]:
-        """
-        """
-        valid_layers = []
-        for layer in layers:
-            if layer in self.layers:
-                valid_layers.append(layer)
-            else:
-                raise RuntimeWarning(
-                    "Via no-connect layer specified for layer where via "
-                    "isn't present. No-connect for layer {} will be "
-                    "ignored. Check your code.".format(layer)
-                )
-        return valid_layers
 
     def construct(self, position: Coordinate2) -> None:
         """
@@ -678,6 +683,165 @@ class Via(Structure):
         """
         """
         return self.pad_radius() + self._antipad
+
+
+class ViaFence(Structure):
+    """
+    Via fence structure.
+
+    A via fence is a series of vias that can be used to
+    electromagnetically guard regions of a PCB.
+    """
+
+    def __init__(
+        self,
+        pcb: PCB,
+        position: Coordinate2,
+        length: float,
+        via: Via = None,
+        transform: CSTransform = None,
+    ):
+        """
+        """
+
+
+class ViaWall(Structure):
+    """
+    A via wall is similar to a via fence except that it approximates
+    the series of vias as a single metal rectangular box.  This is
+    more computationally efficient than a ViaFence and for most
+    applications just as accurate.
+
+    It's possible to make the width 0 and the mesh will try to put a
+    mesh line directly at the 0-width position.  However, due to
+    floating point errors this will sometimes ignore the wall, so it's
+    generally recommended to use a nonzero width.
+    """
+
+    unique_index = 0
+
+    def __init__(
+        self,
+        pcb: PCB,
+        position: Coordinate2,
+        length: float,
+        width: float,
+        antipad_width: float = None,
+        layers: range = None,
+        noconnect_layers: List[int] = [],
+        transform: CSTransform = None,
+    ):
+        """
+        """
+        self._pcb = pcb
+        self._position = position
+        self._length = length
+        self._width = width
+        if layers is None:
+            self._layers = self._pcb.copper_layers()
+        else:
+            self._layers = range(
+                layers[0] + self._pcb.copper_layers()[0],
+                layers[-1] + self._pcb.copper_layers()[0] + 1,
+            )
+        self._noconnect_layers = _via_noconnect_layers(
+            self._layers, noconnect_layers
+        )
+        if antipad_width is None and len(self._noconnect_layers) != 0:
+            raise ValueError(
+                "Must specify antipad_width when using noconnect_layers."
+            )
+        self._antipad_width = antipad_width
+        self._transform = transform
+        self._index = None
+
+        if self._position is not None:
+            self.construct(self._position)
+
+    def construct(
+        self, position: Coordinate2, transform: CSTransform = None
+    ) -> None:
+        """
+        """
+        self._position = position
+        self._transform = append_transform(self._transform, transform)
+        self._index = self._get_inc_ctr()
+        self._construct_via_wall()
+        self._construct_antipads()
+
+    def _construct_via_wall(self) -> None:
+        """
+        """
+        prop = self._pcb.sim.csx.AddMetal(self._via_wall_name())
+        _set_box(
+            prop=prop,
+            start=self._start(),
+            stop=self._stop(),
+            position=Coordinate3(self._position.x, self._position.y, 0),
+            transform=self._transform,
+            priority=priorities["ground"],
+        )
+
+    def _construct_antipads(self) -> None:
+        """
+        """
+        if len(self._noconnect_layers) == 0:
+            return
+
+        ref_freq = self._pcb.sim.reference_frequency
+        prop = self._pcb.sim.csx.AddMaterial(
+            self._antipad_name(),
+            epsilon=self._pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
+            kappa=self._pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
+        )
+        for layer in self._noconnect_layers:
+            zpos = self._pcb.copper_layer_elevation(layer)
+            start = [
+                -self._length / 2,
+                -self._width / 2 - self._antipad_width,
+                zpos,
+            ]
+            stop = [
+                self._length / 2,
+                self._width / 2 + self._antipad_width,
+                zpos,
+            ]
+            _set_box(
+                prop=prop,
+                start=start,
+                stop=stop,
+                position=Coordinate3(self._position.x, self._position.y, 0),
+                transform=self._transform,
+                priority=priorities["keepout"],
+            )
+
+    def _start(self) -> List[float]:
+        """
+        """
+        return [
+            -self._length / 2,
+            -self._width / 2,
+            self._pcb.copper_layer_elevation(self._layers[0]),
+        ]
+
+    def _stop(self) -> List[float]:
+        """
+        """
+        return [
+            self._length / 2,
+            self._width / 2,
+            self._pcb.copper_layer_elevation(self._layers[-1]),
+        ]
+
+    def _via_wall_name(self) -> str:
+        """
+        """
+        return "Via_Wall_" + str(self._index)
+
+    def _antipad_name(self) -> str:
+        """
+        """
+        return "Via_Wall_Antipad_" + str(self._index)
 
 
 class Microstrip(Structure):
@@ -1936,10 +2100,10 @@ class SMDPassive(Structure):
         dimensions: SMDPassiveDimensions,
         pad_width: float,
         pad_length: float,
-        gap: float,
-        c: float = 0,
-        r: float = 0,
-        l: float = 0,
+        gap: float = None,
+        c: float = None,
+        r: float = None,
+        l: float = None,
         pcb_layer: int = 0,
         gnd_cutout_width: float = 0,
         gnd_cutout_length: float = 0,
@@ -2058,13 +2222,15 @@ class SMDPassive(Structure):
         """
         """
         smd_prop = self.pcb.sim.csx.AddLumpedElement(
-            self._smd_name(),
-            ny=self._axis.axis,
-            caps=True,
-            R=self._r,
-            C=self._c,
-            L=self._l,
+            self._smd_name(), ny=self._axis.axis, caps=True
         )
+        if self._r is not None:
+            smd_prop.SetResistance(self._r)
+        if self._c is not None:
+            smd_prop.SetCapacity(self._c)
+        if self._l is not None:
+            smd_prop.SetInductance(self._l)
+
         prop_axis = self._axis.axis
         orth_axis = self._orthogonal_axis().axis
         start = [None, None, self._pad_elevation()]
