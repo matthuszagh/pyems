@@ -19,6 +19,7 @@ class Type(Enum):
 
     metal = 0
     nonmetal = 1
+    air = 1
 
 
 class BoundedType:
@@ -459,11 +460,63 @@ class Mesh:
         self._set_metal_bounds(bounded_types)
         size_ordered_bounded_types = _sort_bounded_types(bounded_types)
         self._gen_mesh_for_bounded_types(size_ordered_bounded_types)
+        self._trim_air_mesh()
 
         self._set_mesh_from_lines()
         if show_pml:
             self._show_pml(self.pml_boxes())
         self.sim.post_mesh()
+
+    def _trim_air_mesh(self) -> None:
+        """
+        Remove excessive boundary cells.
+        """
+        if self.simulation_bounds is not None:
+            return
+
+        for dim in range(3):
+            lower_pml_cells = self.expand_bounds[dim][0]
+            if lower_pml_cells > 0:
+                pos = self._lowest_nonair_pos(dim)
+                mesh_idx, _ = self._line_below(dim, pos)
+                if mesh_idx > lower_pml_cells:
+                    del_num = mesh_idx - lower_pml_cells
+                    del self.mesh_lines[dim][0:del_num]
+
+            upper_pml_cells = self.expand_bounds[dim][1]
+            if upper_pml_cells > 0:
+                pos = self._highest_nonair_pos(dim)
+                mesh_idx, _ = self._line_above(dim, pos)
+                if len(self.mesh_lines[dim]) - mesh_idx > upper_pml_cells:
+                    del_num = (
+                        len(self.mesh_lines[dim])
+                        - mesh_idx
+                        - upper_pml_cells
+                        - 1
+                    )
+                    del self.mesh_lines[dim][-del_num:]
+
+    def _lowest_nonair_pos(self, dim: int) -> float:
+        """
+        """
+        lowest_pos = None
+        for btype in self.bounded_types[dim]:
+            if btype.get_type() != Type.air and (
+                lowest_pos is None or btype.lower_bound < lowest_pos
+            ):
+                lowest_pos = btype.lower_bound
+        return lowest_pos
+
+    def _highest_nonair_pos(self, dim: int) -> float:
+        """
+        """
+        highest_pos = None
+        for btype in self.bounded_types[dim]:
+            if btype.get_type() != Type.air and (
+                highest_pos is None or btype.upper_bound > highest_pos
+            ):
+                highest_pos = btype.upper_bound
+        return highest_pos
 
     def _show_pml(self, boxes: List[Box3]) -> None:
         """
@@ -618,8 +671,8 @@ class Mesh:
                 lower = btype.get_bounds()[0]
                 upper = btype.get_bounds()[1]
                 is_metal = btype.get_type() == Type.metal
-                line_below = self._line_below(dim, lower)
-                line_above = self._line_above(dim, upper)
+                _, line_below = self._line_below(dim, lower)
+                _, line_above = self._line_above(dim, upper)
                 self._gen_mesh_in_bounds(
                     dim, lower, upper, line_below, line_above, is_metal
                 )
@@ -800,13 +853,14 @@ class Mesh:
             for line in self.mesh_lines[dim]:
                 self.mesh.AddLine(dim, line)
 
-    def _line_below(self, dim: int, pos: float) -> float:
+    def _line_below(self, dim: int, pos: float) -> Tuple[int, float]:
         """
-        Return the position of the nearest line below the provided one.
+        Return the index and position of the nearest line below the
+        provided one.
         """
         (idx, act_pos) = self.nearest_mesh_line(dim, pos)
         if act_pos is None:
-            return None
+            return (None, None)
 
         if np.isclose(act_pos, pos):
             idx -= 1
@@ -814,22 +868,23 @@ class Mesh:
                 act_pos = self.get_mesh_line(dim, idx)
 
         if act_pos < pos:
-            return act_pos
+            return (idx, act_pos)
 
         idx -= 1
         if self._mesh_valid_index(dim, idx):
             act_pos = self.get_mesh_line(dim, idx)
-            return act_pos
+            return (idx, act_pos)
 
-        return None
+        return (None, None)
 
-    def _line_above(self, dim: int, pos: float) -> float:
+    def _line_above(self, dim: int, pos: float) -> Tuple[int, float]:
         """
-        Return the position of the nearest line above the provided one.
+        Return the index and position of the nearest line above the
+        provided one.
         """
         (idx, act_pos) = self.nearest_mesh_line(dim, pos)
         if act_pos is None:
-            return None
+            return (None, None)
 
         if np.isclose(act_pos, pos):
             idx += 1
@@ -837,14 +892,14 @@ class Mesh:
                 act_pos = self.get_mesh_line(dim, idx)
 
         if act_pos > pos:
-            return act_pos
+            return (idx, act_pos)
 
         idx += 1
         if self._mesh_valid_index(dim, idx):
             act_pos = self.get_mesh_line(dim, idx)
-            return act_pos
+            return (idx, act_pos)
 
-        return None
+        return (None, None)
 
     def _mesh_valid_index(self, dim: int, index: int) -> bool:
         """
@@ -1252,13 +1307,9 @@ class Mesh:
                         "of a physical structure."
                     )
                 else:
-                    btype = BoundedType(
-                        Type.nonmetal, bounds[0], existing_lower
-                    )
+                    btype = BoundedType(Type.air, bounds[0], existing_lower)
                     bounded_types[dim].insert(0, btype)
-                    btype = BoundedType(
-                        Type.nonmetal, existing_upper, bounds[1]
-                    )
+                    btype = BoundedType(Type.air, existing_upper, bounds[1])
                     bounded_types[dim].append(btype)
         else:
             for dim in range(3):
@@ -1270,15 +1321,13 @@ class Mesh:
                     new_low = existing_lower - (
                         self.nonmetal_res * expand_lower
                     )
-                    btype = BoundedType(Type.nonmetal, new_low, existing_lower)
+                    btype = BoundedType(Type.air, new_low, existing_lower)
                     bounded_types[dim].insert(0, btype)
                 if expand_upper != 0:
                     new_high = existing_upper + (
                         self.nonmetal_res * expand_upper
                     )
-                    btype = BoundedType(
-                        Type.nonmetal, existing_upper, new_high
-                    )
+                    btype = BoundedType(Type.air, existing_upper, new_high)
                     bounded_types[dim].append(btype)
 
         for dim in range(3):
