@@ -1630,9 +1630,8 @@ class Taper(Structure):
     another width.
 
     The taper proceeds in the positive x-direction, where width1 is
-    the width1 is the width at the lower x-value and width2 is the
-    width at the higher x-value.  This can be adjusted with a
-    transformation.
+    the width at the lower x-value and width2 is the width at the
+    higher x-value.  This can be adjusted with a transformation.
     """
 
     unique_index = 0

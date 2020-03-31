@@ -568,6 +568,16 @@ class Mesh:
         )
         return boxes
 
+    def add_line_manual(self, dim: int, pos: float) -> None:
+        """
+        Can be used to manually add a line to the mesh.  This should
+        only be used for debugging purposes.  If the generated mesh is
+        suboptimal, file a bug report.
+        """
+        self._add_lines_to_mesh([pos], dim)
+        self._set_mesh_from_lines()
+        self.sim.post_mesh()
+
     def sim_box(self, include_pml: bool = True) -> Box3:
         """
         """

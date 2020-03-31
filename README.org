@@ -211,16 +211,16 @@ values as ~uf~ and the incident and reflected waves as ~inc~ and
 ~ref~.
 
 * To-Do
+** TODO via wall should support nonzero dimensions
+The via wall otherwise often gets ignored. I believe this is a result
+of the floating point precision errors.
+
 ** TODO probe should not hold onto freq
 ** TODO probe get_freq_data and get_time_data
 These methods are poorly named. freq_data and time_data are better
 names. Additionally, they shouldn't pass back frequency and time
 values. This should be retreived with other methods. Note that this
 will require adjustments to port.py too.
-
-** TODO microstrip propagation should be able to be set
-This would allow y-direction propagation in addition to x. This would
-allow less-expensive simulations for things like bends.
 
 ** TODO floating point precision errors
 Zero-dimension structures can easily be ignored because of floating
