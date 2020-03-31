@@ -150,14 +150,17 @@ class Simulation:
         """
         return self._nf2ff
 
-    def run(self, csx: bool = True) -> None:
+    def run(self, csx: bool = True, debug_pec: bool = False) -> None:
         """
         """
         if csx:
             self.view_csx(prompt=True)
         if not self._calc_only:
-            self.fdtd.Run(self.sim_dir, cleanup=False)
-        self._calc_ports()
+            if debug_pec:
+                self.fdtd.Run(self.sim_dir, setup_only=True, debug_pec=True)
+            else:
+                self.fdtd.Run(self.sim_dir, cleanup=False)
+                self._calc_ports()
 
     def view_csx(self, prompt: bool = False) -> None:
         """
