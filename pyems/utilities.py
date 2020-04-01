@@ -10,7 +10,7 @@ from CSXCAD.CSTransform import CSTransform
 # TODO should set max precision instead of precision list. Precision
 # should be computed automatically based on the last digit that
 # differs between each value.
-def pretty_print(
+def print_table(
     data: np.array, col_names: List[str], prec: List[int], out_file=sys.stdout,
 ) -> None:
     """

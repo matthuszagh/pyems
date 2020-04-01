@@ -6,7 +6,7 @@ from pyems.structure import PCB, Microstrip
 from pyems.coordinate import Coordinate2, Box2, Coordinate3, Box3, Axis
 from pyems.pcb import common_pcbs
 from pyems.mesh import Mesh
-from pyems.utilities import pretty_print, mil_to_mm
+from pyems.utilities import print_table, mil_to_mm
 from pyems.field_dump import FieldDump, DumpType
 
 freq = np.linspace(4e9, 8e9, 501)
@@ -83,7 +83,7 @@ mesh = Mesh(
 sim.run()
 sim.view_field()
 
-pretty_print(
+print_table(
     data=[sim.freq / 1e9, sim.s_param(1, 1), sim.s_param(2, 1)],
     col_names=["freq", "s11", "s21"],
     prec=[4, 4, 4],

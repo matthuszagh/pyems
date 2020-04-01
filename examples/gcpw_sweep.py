@@ -6,7 +6,7 @@ from pyems.structure import PCB, Microstrip
 from pyems.coordinate import Box2, Coordinate2, Axis
 from pyems.mesh import Mesh
 from pyems.simulation import Simulation, sweep
-from pyems.utilities import mil_to_mm, array_index, pretty_print
+from pyems.utilities import mil_to_mm, array_index, print_table
 
 
 freq = np.linspace(4e9, 8e9, 501)
@@ -86,4 +86,4 @@ widths = np.linspace(
 )
 sims = [gen_sim(width=width) for width in widths]
 sim_vals = sweep(sims=sims, func=sim_impedance, processes=11)
-pretty_print(data=[widths, sim_vals], col_names=["width", "z0"], prec=[4, 4])
+print_table(data=[widths, sim_vals], col_names=["width", "z0"], prec=[4, 4])

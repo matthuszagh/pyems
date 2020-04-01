@@ -4,7 +4,7 @@ import numpy as np
 from pyems.simulation import Simulation
 from pyems.structure import Coax
 from pyems.coordinate import Coordinate3, Axis
-from pyems.utilities import mil_to_mm, pretty_print
+from pyems.utilities import mil_to_mm, print_table
 from pyems.calc import coax_core_diameter
 from pyems.material import common_dielectrics
 from pyems.field_dump import FieldDump, DumpType
@@ -63,7 +63,7 @@ sim.view_field()
 
 z0 = sim.ports[0].impedance()
 s11 = sim.s_param(1, 1)
-pretty_print(
+print_table(
     data=[sim.freq / 1e9, np.abs(z0), s11],
     col_names=["freq", "z0", "s11"],
     prec=[4, 4, 4],

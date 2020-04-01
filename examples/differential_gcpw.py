@@ -5,7 +5,7 @@ from pyems.simulation import Simulation
 from pyems.pcb import common_pcbs
 from pyems.structure import DifferentialMicrostrip, PCB
 from pyems.coordinate import Coordinate2, Axis, Box3, Coordinate3
-from pyems.utilities import pretty_print, mil_to_mm
+from pyems.utilities import print_table, mil_to_mm
 from pyems.field_dump import FieldDump, DumpType
 from pyems.mesh import Mesh
 
@@ -66,7 +66,7 @@ FieldDump(
 sim.run()
 sim.view_field()
 
-pretty_print(
+print_table(
     data=[sim.freq / 1e9, np.abs(sim.ports[0].impedance()), sim.s_param(1, 1)],
     col_names=["freq", "z0", "s11"],
     prec=[2, 4, 4],

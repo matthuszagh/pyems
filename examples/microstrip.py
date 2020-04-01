@@ -7,7 +7,7 @@ from pyems.mesh import Mesh
 from pyems.pcb import common_pcbs
 from pyems.coordinate import Coordinate2, Axis, Box3, Coordinate3
 from pyems.field_dump import FieldDump, DumpType
-from pyems.utilities import pretty_print
+from pyems.utilities import print_table
 
 freq = np.arange(0, 18e9, 1e7)
 ref_freq = 5.6e9
@@ -59,7 +59,7 @@ FieldDump(
 sim.run()
 sim.view_field()
 
-pretty_print(
+print_table(
     data=[sim.freq / 1e9, np.abs(sim.ports[0].impedance())],
     col_names=["freq", "z0"],
     prec=[2, 4],

@@ -2,7 +2,7 @@
 
 import os
 import numpy as np
-from pyems.utilities import pretty_print
+from pyems.utilities import print_table
 from pyems.port import RectWaveguidePort
 from pyems.simulation import Simulation
 from pyems.field_dump import FieldDump
@@ -50,7 +50,7 @@ sim.run()
 sim.view_field()
 
 s11 = sim.s_param(1, 1)
-pretty_print(
+print_table(
     np.concatenate(([sim.freq / 1e9], [s11])),
     col_names=["freq", "s11"],
     prec=[4, 4],
@@ -71,14 +71,14 @@ rad_phi0 = nf2ff.radiation_pattern(phi=0)
 rad_phi90 = nf2ff.radiation_pattern(phi=90)
 
 print("phi0")
-pretty_print(
+print_table(
     np.concatenate(([theta], [rad_phi0])),
     col_names=["theta", "gain"],
     prec=[4, 4],
 )
 
 print("phi90")
-pretty_print(
+print_table(
     np.concatenate(([theta], [rad_phi90])),
     col_names=["theta", "gain"],
     prec=[4, 4],

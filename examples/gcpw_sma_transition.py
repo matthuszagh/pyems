@@ -9,7 +9,7 @@ from pyems.calc import coax_core_diameter
 from pyems.material import common_dielectrics
 from pyems.mesh import Mesh
 from pyems.field_dump import FieldDump, DumpType
-from pyems.utilities import pretty_print, mil_to_mm
+from pyems.utilities import print_table, mil_to_mm
 
 freq = np.linspace(1e9, 18e9, 501)
 ref_freq = 6e9
@@ -210,7 +210,7 @@ sim.view_field()
 
 s11 = sim.s_param(1, 1)
 s21 = sim.s_param(2, 1)
-pretty_print(
+print_table(
     data=[sim.freq / 1e9, s11, s21],
     col_names=["freq", "s11", "s21"],
     prec=[4, 4, 4],

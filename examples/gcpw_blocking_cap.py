@@ -4,7 +4,7 @@ import numpy as np
 from pyems.pcb import common_pcbs
 from pyems.simulation import Simulation
 from pyems.field_dump import FieldDump
-from pyems.utilities import pretty_print, mil_to_mm
+from pyems.utilities import print_table, mil_to_mm
 from pyems.structure import (
     PCB,
     Microstrip,
@@ -143,7 +143,7 @@ mesh = Mesh(
 sim.run()
 sim.view_field()
 
-pretty_print(
+print_table(
     data=[sim.freq / 1e9, sim.s_param(1, 1), sim.s_param(2, 1)],
     col_names=["freq", "s11", "s21"],
     prec=[4, 4, 4],

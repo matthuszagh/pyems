@@ -6,7 +6,7 @@ from pyems.structure import PCB, Microstrip, ViaWall
 from pyems.coordinate import Coordinate2, Coordinate3, Box2, Box3, Axis
 from pyems.pcb import common_pcbs
 from pyems.mesh import Mesh
-from pyems.utilities import pretty_print, mil_to_mm
+from pyems.utilities import print_table, mil_to_mm
 from pyems.field_dump import FieldDump
 
 freq = np.arange(0, 18e9, 1e7)
@@ -76,7 +76,7 @@ mesh = Mesh(
 sim.run()
 sim.view_field()
 
-pretty_print(
+print_table(
     data=[sim.freq / 1e9, np.abs(sim.ports[0].impedance()), sim.s_param(1, 1)],
     col_names=["freq", "z0", "s11"],
     prec=[4, 4, 4],

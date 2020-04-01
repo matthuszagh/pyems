@@ -10,7 +10,7 @@ from pyems.calc import (
     microstrip_effective_dielectric,
     pozar_z0_width,
 )
-from pyems.utilities import pretty_print
+from pyems.utilities import print_table
 from pyems.coordinate import Coordinate2, Axis, Box3, Coordinate3
 from pyems.mesh import Mesh
 from pyems.field_dump import FieldDump, DumpType
@@ -153,7 +153,7 @@ FieldDump(
 sim.run()
 sim.view_field()
 
-pretty_print(
+print_table(
     data=[
         sim.freq / 1e9,
         np.abs(sim.ports[0].impedance()),

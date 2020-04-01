@@ -10,7 +10,7 @@ from pyems.structure import (
     SMDPassive,
 )
 from pyems.coordinate import Coordinate2, Axis, Box3, Coordinate3
-from pyems.utilities import pretty_print, mil_to_mm
+from pyems.utilities import print_table, mil_to_mm
 from pyems.field_dump import FieldDump, DumpType
 from pyems.mesh import Mesh
 
@@ -119,7 +119,7 @@ FieldDump(
 sim.run()
 sim.view_field()
 
-pretty_print(
+print_table(
     data=[sim.freq / 1e9, sim.s_param(1, 1), sim.s_param(2, 1)],
     col_names=["freq", "s11", "s21"],
     prec=[2, 4, 4],
