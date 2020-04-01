@@ -1,5 +1,6 @@
 import numpy as np
 from pyems.physical_constant import C0, MUE0, Z0
+from multiprocessing import Pool
 
 
 def wheeler_z0(w: float, t: float, er: float, h: float) -> float:
@@ -260,3 +261,14 @@ def wavenumber(freq: np.array, unit: float) -> np.array:
     light is travelling through a vacuum.
     """
     return np.array(2 * np.pi / wavelength(freq, unit))
+
+
+def sweep(func, params, processes: int = 5):
+    """
+    :param func: Function object taking one item in the `params` list.
+    :param params: List of parameter values to sweep over.
+    :param processes: Max number of parallel processes.
+    """
+    pool = Pool(processes=processes)
+    ret_vals = list(pool.map(func, params))
+    return ret_vals
