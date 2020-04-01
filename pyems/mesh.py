@@ -357,7 +357,9 @@ class Mesh:
         expand_bounds: Tuple[
             Tuple[int, int], Tuple[int, int], Tuple[int, int]
         ] = ((8, 8), (8, 8), (8, 8)),
-        simulation_bounds: List[List[float]] = None,
+        simulation_bounds: Tuple[
+            Tuple[float, float], Tuple[float, float], Tuple[float, float]
+        ] = None,
     ):
         """
         :param sim: Simulation object to which mesh should be added.
@@ -1301,16 +1303,28 @@ class Mesh:
             for dim, bounds in enumerate(self.simulation_bounds):
                 existing_lower = bounded_types[dim][0].get_bounds()[0]
                 existing_upper = bounded_types[dim][-1].get_bounds()[1]
-                if bounds[0] > existing_lower or bounds[1] < existing_upper:
+                if (
+                    bounds[0] > existing_lower
+                    and not np.isclose(bounds[0], existing_lower)
+                ) or (
+                    bounds[1] < existing_upper
+                    and not np.isclose(bounds[1], existing_upper)
+                ):
                     raise ValueError(
                         "Requested simulation bounds that would ignore part "
                         "of a physical structure."
                     )
                 else:
-                    btype = BoundedType(Type.air, bounds[0], existing_lower)
-                    bounded_types[dim].insert(0, btype)
-                    btype = BoundedType(Type.air, existing_upper, bounds[1])
-                    bounded_types[dim].append(btype)
+                    if not np.isclose(bounds[0], existing_lower):
+                        btype = BoundedType(
+                            Type.air, bounds[0], existing_lower
+                        )
+                        bounded_types[dim].insert(0, btype)
+                    if not np.isclose(bounds[1], existing_upper):
+                        btype = BoundedType(
+                            Type.air, existing_upper, bounds[1]
+                        )
+                        bounded_types[dim].append(btype)
         else:
             for dim in range(3):
                 existing_lower = bounded_types[dim][0].get_bounds()[0]
