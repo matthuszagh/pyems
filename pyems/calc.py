@@ -1,5 +1,5 @@
 import numpy as np
-from pyems.physical_constant import C0, MUE0
+from pyems.physical_constant import C0, MUE0, Z0
 
 
 def wheeler_z0(w: float, t: float, er: float, h: float) -> float:
@@ -17,7 +17,6 @@ def wheeler_z0(w: float, t: float, er: float, h: float) -> float:
 
     :returns: characteristic impedance
     """
-    z0 = 376.730313668
     weff = w + (
         (t * ((1 + (1 / er)) / (2 * np.pi)))
         * np.log(
@@ -32,7 +31,7 @@ def wheeler_z0(w: float, t: float, er: float, h: float) -> float:
     )
     tmp1 = 4 * h / weff
     tmp2 = (14 + (8 / er)) / 11
-    zm = (z0 / (2 * np.pi * np.sqrt(2 * (1 + er)))) * np.log(
+    zm = (Z0 / (2 * np.pi * np.sqrt(2 * (1 + er)))) * np.log(
         1
         + (
             tmp1
