@@ -1,6 +1,9 @@
-import numpy as np
-from pyems.physical_constant import C0, MUE0, Z0
 from multiprocessing import Pool
+import numpy as np
+from scipy.optimize import curve_fit
+from scipy.special import polygamma
+from pyems.physical_constant import C0, MUE0, Z0
+from pyems.utilities import print_table
 
 
 def wheeler_z0(w: float, t: float, er: float, h: float) -> float:
@@ -272,3 +275,71 @@ def sweep(func, params, processes: int = 5):
     pool = Pool(processes=processes)
     ret_vals = list(pool.map(func, params))
     return ret_vals
+
+
+def optimize_parameter(
+    func, start, step, tol, max_steps, display_progress=False
+):
+    """
+    Compute the lowest-cost value of a parameter that still produces
+    accurate results.
+    """
+    res1 = func(start)
+    n = len(res1)
+    res_matrix = np.zeros((max_steps, n), dtype=np.clongdouble)
+    res_matrix[0] = np.array(res1)
+    # compute the root mean square differences from the previous results array.
+    rms = np.zeros((max_steps - 1,))
+    i = 1
+    orig_start = start
+    start += step
+    while i < max_steps:
+        res_matrix[i] = np.array(func(start))
+        diff = np.subtract(res_matrix[i], res_matrix[i - 1])
+        rms[i - 1] = np.sqrt(
+            np.sum(np.real(np.multiply(diff, np.conj(diff)))) / n
+        )
+        if display_progress:
+            print_table(
+                np.abs(res_matrix[: i + 1]),
+                [
+                    "{}".format(val)
+                    for val in range(orig_start, start + 1, step)
+                ],
+                [4 for _ in range(orig_start, start + 1, step)],
+            )
+            print("parameter: {}".format(start))
+            print("RMS: {:.10f}".format(rms[i - 1]))
+
+        if i > 2:
+            fit = curve_fit(rms_fit, range(orig_start, start, step), rms[:i])
+            a = fit[0][0]
+            b = fit[0][1]
+            error_estimate = rms_remaining_sum(a, b, start + 1)
+
+            if display_progress:
+                print("Sum future errors: {:.10f}".format(error_estimate))
+
+            if error_estimate < tol:
+                return start
+
+        i += 1
+        start += step
+
+    raise RuntimeError(
+        "Failed to optimize parameter. Consider increasing "
+        "the tolerance or max number of steps."
+    )
+
+
+def rms_fit(x, a, b):
+    """
+    """
+    return np.divide(a, np.power(np.subtract(x, b), 2))
+
+
+def rms_remaining_sum(a, b, c):
+    """
+    Computes the sum: sum(a/(x-b)^2, x=c, oo)
+    """
+    return a * polygamma(1, c - b)
