@@ -210,6 +210,22 @@ requires you to know that OpenEMS ports store their voltage frequency
 values as ~uf~ and the incident and reflected waves as ~inc~ and
 ~ref~.
 
+* Textbook References
+A number of equations in this code base come from microwave design and
+theory textbooks. I've made an effort to make a comment in the code
+whenever an equation is taken from one of these textbooks so that
+users can look up the corresponding theory and to make it easier to
+find bugs in the code.
+
+Here's a list of the textbooks referenced:
+1. Pozar refers to "Microwave Engineering" by David Pozar, Fourth
+   Edition.
+2. Wadell refers to "Transmission Line Design Handbook" by Brian
+   Wadell, published 1991.
+
+If you find a reference to a text not mentioned here, please submit a
+bug report or pull request.
+
 * To-Do
 ** TODO via wall should support nonzero dimensions
 The via wall otherwise often gets ignored. I believe this is a result
