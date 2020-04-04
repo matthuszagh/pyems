@@ -198,7 +198,8 @@ def microstrip_effective_dielectric(
     """
     Compute the effective dielectric for a microstrip trace.  This
     represents the dielectric constant for a homogenous medium that
-    replaces the air and substrate.  See Pozar 4e p.148 for details.
+    replaces the air and substrate.  See Pozar 4e p.148 and Wadell
+    p.94 for details.
 
     :param substrate_dielectric: Dielectric constant of the PCB
         substrate.
@@ -208,9 +209,16 @@ def microstrip_effective_dielectric(
         for substrate_height and trace_width as long as they are
         consistent.
     """
+    wh_ratio = trace_width / substrate_height
+    common_factor = 1 / np.sqrt(1 + (12 / wh_ratio))
+
+    if wh_ratio < 1:
+        factor = common_factor + (0.04 * ((1 - wh_ratio) ^ 2))
+    else:
+        factor = common_factor
+
     return ((substrate_dielectric + 1) / 2) + (
-        ((substrate_dielectric - 1) / 2)
-        * (1 / np.sqrt(1 + (12 * substrate_height / trace_width)))
+        ((substrate_dielectric - 1) / 2) * factor
     )
 
 
@@ -290,9 +298,15 @@ def optimize_parameter(
     res_matrix[0] = np.array(res1)
     # compute the root mean square differences from the previous results array.
     rms = np.zeros((max_steps - 1,))
+    # If the first few RMS values don't show a clear trend, ignore
+    # them, since this may have been the result of poor start value
+    # choice.
+    rms_trend_down = False
+    rms_valid_index = 0
     i = 1
     orig_start = start
     start += step
+
     while i < max_steps:
         res_matrix[i] = np.array(func(start))
         diff = np.subtract(res_matrix[i], res_matrix[i - 1])
@@ -300,28 +314,61 @@ def optimize_parameter(
             np.sum(np.real(np.multiply(diff, np.conj(diff)))) / n
         )
         if display_progress:
+            num_steps = int(np.round((start - orig_start) / step) + 1)
             print_table(
                 np.abs(res_matrix[: i + 1]),
                 [
-                    "{}".format(val)
-                    for val in range(orig_start, start + 1, step)
+                    "{:.4f}".format(val)
+                    for val in np.linspace(orig_start, start, num=num_steps)
                 ],
-                [4 for _ in range(orig_start, start + 1, step)],
+                [4 for _ in range(num_steps)],
             )
             print("parameter: {}".format(start))
             print("RMS: {:.10f}".format(rms[i - 1]))
 
-        if i > 2:
-            fit = curve_fit(rms_fit, range(orig_start, start, step), rms[:i])
-            a = fit[0][0]
-            b = fit[0][1]
-            error_estimate = rms_remaining_sum(a, b, start + 1)
+        if not rms_trend_down and i > 1 and rms[i - 1] > rms[i - 2]:
+            rms_valid_index = i - 1
 
-            if display_progress:
-                print("Sum future errors: {:.10f}".format(error_estimate))
+        if i - rms_valid_index > 2:
+            if (
+                not rms_trend_down
+                and rms[i - 1] < rms[i - 2]
+                and rms[i - 2] < rms[i - 3]
+            ):
+                rms_trend_down = True
 
-            if error_estimate < tol:
-                return start
+            valid_start = orig_start + (rms_valid_index * step)
+            num_valid_steps = int(
+                np.round((start - step - valid_start) / step) + 1
+            )
+            try:
+                print(
+                    np.linspace(valid_start, start - step, num=num_valid_steps)
+                )
+                print(rms[rms_valid_index:i])
+                fit = curve_fit(
+                    rms_fit,
+                    np.linspace(
+                        valid_start, start - step, num=num_valid_steps
+                    ),
+                    rms[rms_valid_index:i],
+                )
+                a = fit[0][0]
+                b = fit[0][1]
+                error_estimate = rms_remaining_sum(a, b, start + 1)
+
+                if display_progress:
+                    print("Error estimate: {:.10f}".format(error_estimate))
+
+                if error_estimate < tol:
+                    return start
+            except RuntimeError:
+                # If curve fitting fails, ignore the oldest RMS value
+                # and try again on the next iteration.
+                print(
+                    "Failed to fit curve to RMS values, ignoring oldest value."
+                )
+                rms_valid_index += 1
 
         i += 1
         start += step

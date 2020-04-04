@@ -55,6 +55,39 @@ def construct_circle(
     return prim
 
 
+def _transformed_coordinate(coord, transform_origin, transform: CSTransform):
+    """
+    Transform a coordinate about `transform_origin`, then translate it
+    to the correct position.  The coordinate can either be Coordinate2
+    or Coordinate3.
+    """
+    twod = False
+    if type(coord) == Coordinate2:
+        twod = True
+        coord = Coordinate3(coord.x, coord.y, 0)
+        transform_origin = Coordinate3(
+            transform_origin.x, transform_origin.y, 0
+        )
+
+    tcoord = [
+        coord.x - transform_origin.x,
+        coord.y - transform_origin.y,
+        coord.z - transform_origin.z,
+    ]
+    if transform is not None:
+        tcoord = transform.Transform(tcoord)
+
+    res_coord = Coordinate3(
+        tcoord[0] + transform_origin.x,
+        tcoord[1] + transform_origin.y,
+        tcoord[2] + transform_origin.z,
+    )
+    if twod:
+        return Coordinate2(res_coord.x, res_coord.y)
+    else:
+        return res_coord
+
+
 def _set_box(
     prop: CSProperties,
     start: List[float],
@@ -332,6 +365,15 @@ class PCB(Structure):
         omitted.
         """
         return range(int(self.layers[0] / 2), int(self.layers[-1] / 2) + 1)
+
+    def copper_pours(self) -> List[int]:
+        """
+        List of all copper layers with a copper pour.
+        """
+        layers = list(self.copper_layers())
+        for omission in self._omit_copper:
+            layers.remove(omission)
+        return layers
 
     def _is_copper_layer(self, layer_index: int) -> bool:
         """
@@ -931,7 +973,8 @@ class Microstrip(Structure):
         :param trace_layer: PCB layer of the signal trace.  Uses
             copper layer index values.
         :param gnd_layer: PCB layer of the ground plane.  Uses copper
-            layer index values.
+            layer index values.  Can be set to None when not using a
+            port.
         :param gnd_gap: Gap distance between trace edge and
             surrounding coplanar ground plane.  This is passed as a
             tuple of two floats, specifying the gap for each side of
@@ -946,8 +989,8 @@ class Microstrip(Structure):
             microstrip trace.  Provided as a tuple of 2 floats, where
             the first value gives the gap at the lower edge and the
             second value gives the gap at the upper edge.  Like
-            `gnd_gap` the order is independent of the
-            propagation axis.  A value of None sets no terminal gap.
+            `gnd_gap` the order is independent of the propagation
+            axis.  A value of None sets no terminal gap.
         :param port_number: If the microstrip line is a port, this
             specifies the port number.  If you leave this as None, the
             Microstrip line will not be treated as a port (i.e. you
@@ -1436,6 +1479,248 @@ class DifferentialMicrostrip(Structure):
         return "differential_microstrip_gap_" + str(self._index)
 
 
+class MicrostripCoupler(Structure):
+    """
+    """
+
+    unique_index = 0
+
+    def __init__(
+        self,
+        pcb: PCB,
+        position: Coordinate2,
+        trace_layer: int,
+        gnd_layer: int,
+        trace_width: float,
+        trace_gap: float,
+        length: float,
+        miter: float = None,
+        gnd_gap: Tuple[float, float] = (None, None),
+        transform: CSTransform = None,
+    ):
+        """
+        :param pcb: PCB to which this microstrip coupler is added.
+        :param position: Center point of the microstrip coupler.  This
+            is halfway along the length in the x-direction and in the
+            middle of the trace gap in the y-direction.  If the
+            position is set to None, `construct` will have to be
+            called manually for the coupler to be instantiated.
+        :param trace_layer: PCB copper layer on which the traces are
+            placed.
+        :param gnd_layer: PCB copper layer of the reference ground
+            plane.
+        :param trace_width: Microstrip trace width.
+        :param trace_gap: Distance between coupled line traces.  The
+            distance is measured from the inner edge of each trace.
+        :param length: Length of the coupled portion of the microstrip
+            traces.
+        :param miter: The amount to miter the corners are ports three
+            and four.  If left as None, an optimal miter estimate will
+            be used.  See the `miter` parameter of `Miter`'s
+            constructur for details.
+        :param gnd_gap: Distance between the microstrip trace outer
+            edges and the coplanar ground plane.  A value can be
+            provided for each side, starting with the smaller y-value.
+            If the copper pour has been omitted from the trace layer,
+            leave this as the default None.
+        :param transform: Transform to apply to the coupler.
+        """
+        self._pcb = pcb
+        self._position = position
+        self._trace_layer = trace_layer
+        self._gnd_layer = gnd_layer
+        self._trace_width = trace_width
+        self._trace_gap = trace_gap
+        self._length = length
+        self._miter = miter
+        self._gnd_gap = gnd_gap
+        self._transform = transform
+        self._index = None
+        self._port_positions = [None, None, None, None]
+
+        if self._position is not None:
+            self.construct(self._position)
+
+    def construct(
+        self, position: Coordinate2, transform: CSTransform = None
+    ) -> None:
+        """
+        """
+        self._position = position
+        self._transform = append_transform(self._transform, transform)
+        self._index = self._get_inc_ctr()
+
+        self._construct_traces()
+        self._construct_trace_gap()
+        self._construct_miters()
+
+    def _construct_traces(self) -> None:
+        """
+        """
+        y_dist = self._y_dist()
+        for i, ypos in enumerate(
+            [self._position.y - y_dist, self._position.y + y_dist]
+        ):
+            if i == 0:
+                gnd_gap = (self._gnd_gap[i], None)
+            else:
+                gnd_gap = (None, self._gnd_gap[i])
+
+            Microstrip(
+                pcb=self._pcb,
+                position=Coordinate2(self._position.x, ypos),
+                length=self._length,
+                width=self._trace_width,
+                propagation_axis=Axis("x"),
+                trace_layer=self._trace_layer,
+                gnd_layer=None,
+                gnd_gap=gnd_gap,
+            )
+
+    def _construct_trace_gap(self) -> None:
+        """
+        """
+        if self._trace_layer not in self._pcb.copper_pours():
+            return
+
+        ref_freq = self._pcb.sim.reference_frequency
+        prop = self._pcb.sim.csx.AddMaterial(
+            self._gap_name(),
+            epsilon=self._pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
+            kappa=self._pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
+        )
+        zpos = self._pcb.copper_layer_elevation(self._trace_layer)
+        _set_box(
+            prop=prop,
+            start=[-self._length / 2, -self._trace_gap / 2, zpos],
+            stop=[self._length / 2, self._trace_gap / 2, zpos],
+            position=Coordinate3(self._position.x, self._position.y, 0),
+            transform=self._transform,
+            priority=priorities["keepout"],
+        )
+
+    def _construct_miters(self) -> None:
+        """
+        """
+        miter = Miter(
+            pcb=self._pcb,
+            position=None,
+            pcb_layer=self._trace_layer,
+            gnd_layer=self._gnd_layer,
+            trace_width=self._trace_width,
+            gap=self._gnd_gap[1],
+            miter=self._miter,
+            transform=self._transform,
+        )
+        tr = CSTransform()
+        tr.AddTransform("RotateAxis", "z", 90)
+        miter.construct(
+            position=Coordinate2(
+                self._position.x
+                - self._length / 2
+                - miter.length()
+                + self._trace_width / 2,
+                self._position.y
+                - self._y_dist()
+                - miter.length()
+                + self._trace_width / 2,
+            ),
+            transform=tr,
+        )
+
+        Miter(
+            pcb=self._pcb,
+            position=Coordinate2(
+                self._position.x + self._length / 2,
+                self._position.y - self._y_dist(),
+            ),
+            pcb_layer=self._trace_layer,
+            gnd_layer=self._gnd_layer,
+            trace_width=self._trace_width,
+            gap=self._gnd_gap[1],
+            miter=self._miter,
+            transform=self._transform,
+        )
+
+        self._set_port_positions(miter.length())
+
+    def _set_port_positions(self, miter_length: float) -> None:
+        """
+        """
+        self._port_positions[0] = _transformed_coordinate(
+            coord=Coordinate2(
+                self._position.x - self._length / 2,
+                self._position.y + self._y_dist(),
+            ),
+            transform_origin=self._position,
+            transform=self._transform,
+        )
+
+        self._port_positions[1] = _transformed_coordinate(
+            coord=Coordinate2(
+                self._position.x + self._length / 2,
+                self._position.y + self._y_dist(),
+            ),
+            transform_origin=self._position,
+            transform=self._transform,
+        )
+
+        self._port_positions[2] = _transformed_coordinate(
+            coord=Coordinate2(
+                self._position.x
+                - self._length / 2
+                - miter_length
+                + self._trace_width / 2,
+                self._position.y
+                - self._y_dist()
+                - miter_length
+                + self._trace_width / 2,
+            ),
+            transform_origin=self._position,
+            transform=self._transform,
+        )
+
+        self._port_positions[3] = _transformed_coordinate(
+            coord=Coordinate2(
+                self._position.x
+                + self._length / 2
+                + miter_length
+                - self._trace_width / 2,
+                self._position.y
+                - self._y_dist()
+                - miter_length
+                + self._trace_width / 2,
+            ),
+            transform_origin=self._position,
+            transform=self._transform,
+        )
+
+    def _gap_name(self) -> str:
+        """
+        """
+        return "Microstrip_Coupler_gap_" + str(self._index)
+
+    def _y_dist(self) -> float:
+        """
+        Y-distance from coupler center to center of each microstrip
+        trace.
+        """
+        return self._trace_gap / 2 + self._trace_width / 2
+
+    def port_positions(
+        self,
+    ) -> Tuple[Coordinate2, Coordinate2, Coordinate2, Coordinate2]:
+        """
+        Center trace positions of the coupler's ports 1, 2, 3, and 4.
+        """
+        return (
+            self._port_positions[0],
+            self._port_positions[1],
+            self._port_positions[2],
+            self._port_positions[3],
+        )
+
+
 class Taper(Structure):
     """
     Trace with different widths at the start and end.  Can be used to
@@ -1759,6 +2044,12 @@ class Miter(Structure):
             transform=self.transform,
             priority=priorities["keepout"],
         )
+
+    def length(self) -> float:
+        """
+        Length of miter in x- or y-dimension (it is the same for each).
+        """
+        return self.inset_length() + self._trace_width
 
     def _trace_points(self) -> List[List[float]]:
         """
