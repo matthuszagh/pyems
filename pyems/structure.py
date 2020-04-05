@@ -1742,7 +1742,7 @@ class Taper(Structure):
         width1: float,
         width2: float,
         length: float,
-        gap: float,
+        gap: float = None,
         transform: CSTransform = None,
     ):
         """
@@ -2180,7 +2180,8 @@ class SMDPassiveDimensions:
 
 
 common_smd_passives = {
-    "0402C": SMDPassiveDimensions(length=1e-3, width=0.5e-3, height=0.5e-3)
+    "0201C": SMDPassiveDimensions(length=0.6e-3, width=0.3e-3, height=0.3e-3),
+    "0402C": SMDPassiveDimensions(length=1e-3, width=0.5e-3, height=0.5e-3),
 }
 
 
@@ -2325,7 +2326,7 @@ class SMDPassive(Structure):
         """
         """
         smd_prop = self.pcb.sim.csx.AddLumpedElement(
-            self._smd_name(), ny=self._axis.axis, caps=True
+            self._smd_name(), ny=self._axis.axis, caps=False
         )
         if self._r is not None:
             smd_prop.SetResistance(self._r)
