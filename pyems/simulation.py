@@ -227,7 +227,7 @@ class Simulation:
         """
         [port.calc() for port in self.ports]
 
-    def s_param(self, i: int, j: int) -> np.array:
+    def s_param(self, i: int, j: int, dB: bool = True) -> np.array:
         """
         Calculate the S-parameter, S_{ij}.
 
@@ -235,6 +235,7 @@ class Simulation:
                   num_ports]
         :param j: Second subscript of S.  Must be in the range [1,
                   num_ports]
+        :param dB: Return the s-parameter as a decibel value.
         """
         num_ports = self._num_ports()
         if i > num_ports or j > num_ports or i < 1 or j < 1:
@@ -249,8 +250,11 @@ class Simulation:
             self.ports[i].reflected_voltage()
             / self.ports[j].incident_voltage()
         )
-        s = 20 * np.log10(np.abs(s))
-        return s
+        s = np.abs(s)
+        if not dB:
+            return s
+        else:
+            return 20 * np.log10(s)
 
     def _num_ports(self) -> int:
         """
