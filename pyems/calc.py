@@ -1,5 +1,6 @@
 from multiprocessing import Pool
 import numpy as np
+import scipy.optimize
 from scipy.optimize import curve_fit
 from scipy.special import polygamma
 from pyems.physical_constant import C0, MUE0, Z0
@@ -390,3 +391,33 @@ def rms_remaining_sum(a, b, c):
     Computes the sum: sum(a/(x-b)^2, x=c, oo)
     """
     return a * polygamma(1, c - b)
+
+
+def minimize(func, initial, tol):
+    """
+    Thin wrapper around scipy.optimize.minimize.
+
+    I've added this so that you can call minimize directly from pyems
+    and to make the calling syntax slightly easier (though less
+    flexible).
+
+    :param func: Function object that takes 1 or more arguments and
+        returns a result to be minimized.
+    :param initial: Initial values passed to `func`.  This must be a
+        single value, or an array of values if `func` takes more than
+        1 argument.
+    :param tol: Result tolerance.
+
+    :returns: Array of function arguments that minimize the function,
+              or a single value if `func` only takes 1 argument.
+    """
+    res = scipy.optimize.minimize(
+        func, initial, method="Nelder-Mead", tol=tol, options={"disp": True}
+    )
+    if not res.success:
+        raise RuntimeError(
+            "Minimization failed. See scipy.optimize.minimize "
+            "for other options."
+        )
+
+    return res.x
