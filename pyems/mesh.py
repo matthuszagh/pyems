@@ -352,7 +352,7 @@ class Mesh:
         sim: Simulation,
         metal_res=1 / 20,
         nonmetal_res=1 / 10,
-        smooth: Tuple[float, float, float] = (1.5, 1.5, 1.5),
+        smooth: Tuple[float, float, float] = (1.2, 1.2, 1.2),
         min_lines: int = 5,
         expand_bounds: Tuple[
             Tuple[int, int], Tuple[int, int], Tuple[int, int]
