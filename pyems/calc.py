@@ -393,7 +393,7 @@ def rms_remaining_sum(a, b, c):
     return a * polygamma(1, c - b)
 
 
-def minimize(func, initial, tol):
+def minimize(func, initial, tol, bounds=None):
     """
     Thin wrapper around scipy.optimize.minimize.
 
@@ -406,13 +406,33 @@ def minimize(func, initial, tol):
     :param initial: Initial values passed to `func`.  This must be a
         single value, or an array of values if `func` takes more than
         1 argument.
+    :param bounds: Constrains parameters to a range of values.  This
+        is a tuple of (min, max) for each parameter.  Use None for no
+        bounds.  The default for each parameter is no bounds.  A
+        single value of None can be used to not place boundaries on
+        any parameters.
     :param tol: Result tolerance.
 
     :returns: Array of function arguments that minimize the function,
               or a single value if `func` only takes 1 argument.
     """
+    if bounds is None:
+        if type(initial) is list:
+            num_params = len(initial)
+        else:
+            num_params = 1
+        bounds = []
+        for i in num_params:
+            bounds.append((None, None))
+        bounds = tuple(bounds)
+
     res = scipy.optimize.minimize(
-        func, initial, method="Nelder-Mead", tol=tol, options={"disp": True}
+        func,
+        np.array(initial),
+        method="L-BFGS-B",
+        tol=tol,
+        bounds=bounds,
+        options={"disp": True},
     )
     if not res.success:
         raise RuntimeError(
@@ -420,4 +440,7 @@ def minimize(func, initial, tol):
             "for other options."
         )
 
-    return res.x
+    if len(res.x) == 1:
+        return res.x[0]
+    else:
+        return res.x
