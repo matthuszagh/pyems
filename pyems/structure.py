@@ -1026,6 +1026,9 @@ class Microstrip(Structure):
         self._transform = transform
         self._index = None
 
+        self._check_ref_impedance()
+        self._check_coplanar_gap()
+
         if self.position is not None:
             self.construct(self.position)
 
@@ -1168,6 +1171,30 @@ class Microstrip(Structure):
             raise ValueError(
                 "Invalid propagation axis. Must be in either "
                 "the x or y directions."
+            )
+
+    def _check_ref_impedance(self) -> None:
+        """
+        """
+        if self._port_number is not None and self._ref_impedance is None:
+            raise RuntimeWarning(
+                "Reference impedance not set for port {}".format(
+                    self._port_number
+                )
+            )
+
+    def _check_coplanar_gap(self) -> None:
+        """
+        """
+        if (
+            self._gnd_gap[0] is None
+            or self._gnd_gap[1] is None
+            and self._trace_layer in self._pcb.copper_pours()
+        ):
+            raise RuntimeWarning(
+                "Ground gaps have not been set on the trace layer "
+                "where a copper pour has been set. This is most "
+                "likely an error. Please check your simulation."
             )
 
     def _excitation_axis(self) -> None:
@@ -2190,7 +2217,7 @@ class SMDPassive(Structure):
     Small surface-mount capacitor, resistor, or inductor.
 
     SMD Passives do not support transforms, since the resistive,
-    capacitive and inductive elements must specified in a direction
+    capacitive and inductive elements must be specified in a direction
     parallel to a coordinate axis.
     """
 
@@ -2211,7 +2238,6 @@ class SMDPassive(Structure):
         pcb_layer: int = 0,
         gnd_cutout_width: float = 0,
         gnd_cutout_length: float = 0,
-        taper: Taper = None,
     ):
         """
         :param pcb: PCB object to which this SMD will be added.
@@ -2237,8 +2263,6 @@ class SMDPassive(Structure):
             proportion of the pad width.
         :param gnd_cutout_length: Length of the ground cutout, as a
             proportion of length between the ends of the pads.
-        :param taper: Taper the transition between the trace and SMD
-            pad.  None means do not add a taper.
         """
         self._pcb = pcb
         self._position = position
@@ -2259,7 +2283,6 @@ class SMDPassive(Structure):
         self._gnd_cutout_length = gnd_cutout_length * (
             pad_length + self._dimensions.length
         )
-        self._taper = taper
 
         if self.position is not None:
             self.construct(self.position)
@@ -2290,7 +2313,6 @@ class SMDPassive(Structure):
         self._construct_smd()
         self._construct_gap()
         self._construct_cutout()
-        self._construct_taper()
 
     def _construct_pads(self) -> None:
         """
@@ -2415,41 +2437,6 @@ class SMDPassive(Structure):
             transform=None,
             priority=priorities["keepout"],
         )
-
-    def _construct_taper(self) -> None:
-        """
-        """
-        if self._taper is None:
-            return
-
-        pos1 = Coordinate2(
-            self.position.x
-            - (self.dimensions.length / 2)
-            - (self._pad_length / 2)
-            - (self._taper.length / 2),
-            self.position.y,
-        )
-        pos2 = Coordinate2(
-            self.position.x
-            + (self.dimensions.length / 2)
-            + (self._pad_length / 2)
-            + (self._taper.length / 2),
-            self.position.y,
-        )
-
-        if self._axis.axis == 1:
-            tr1 = CSTransform()
-            tr1.AddTransform("RotateAxis", "z", 90)
-            self._taper.construct(pos1, tr1)
-            tr2 = CSTransform()
-            tr2.AddTransform("RotateAxis", "z", 90)
-            tr2.AddTransform("RotateAxis", "z", 180)
-            self._taper.construct(pos2, tr2)
-        else:
-            tr = CSTransform()
-            tr.AddTransform("RotateAxis", "z", 180)
-            self._taper.construct(pos1)
-            self._taper.construct(pos2, tr)
 
     def _orthogonal_axis(self) -> Axis:
         """
