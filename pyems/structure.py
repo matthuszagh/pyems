@@ -2277,6 +2277,11 @@ class SMDPassive(Structure):
         self._c = c
         self._r = r
         self._l = l
+        if self._l is not None:
+            raise RuntimeWarning(
+                "Setting an inductance value has no effect. OpenEMS "
+                "does not support lumped inductances yet."
+            )
         self._pcb_layer = pcb_layer
         self._check_pcb_layer()
         self._gnd_cutout_width = gnd_cutout_width * pad_width
