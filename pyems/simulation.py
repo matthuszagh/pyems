@@ -24,6 +24,7 @@ class Simulation:
         ),
         reference_frequency: float = None,
         end_criteria: float = 1e-5,
+        timestep_factor: float = 1,
         sim_dir: str = "sim",
         calc_only: bool = False,
     ):
@@ -50,6 +51,9 @@ class Simulation:
             sets the frequency to use.  If the default None is given,
             the center frequency from the frequency array is used.
         :param end_criteria: FDTD termination energy.
+        :param timestep_factor: Can reduce the timestep for added
+            stability.  This must be between 0 (exclusive) and 1
+            (inclusive).
         :param sim_dir: Directory where simulation results are stored.
             If you pass None, a temporary directory will be used.
             It's generally not recommended to use a temporary
@@ -83,7 +87,14 @@ class Simulation:
                     shutil.rmtree(sim_dir)
                 os.mkdir(sim_dir)
             self._sim_dir = sim_dir
-        self._fdtd = openEMS(EndCriteria=self._end_criteria)
+        if timestep_factor <= 0 or timestep_factor > 1:
+            raise ValueError(
+                "timestep_factor must be between 0 (exclusive) "
+                "and 1 (inclusive)."
+            )
+        self._fdtd = openEMS(
+            EndCriteria=self._end_criteria, TimeStepFactor=timestep_factor
+        )
         self._fdtd.SetGaussExcite(
             self.center_frequency(), self.half_bandwidth()
         )
