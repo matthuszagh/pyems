@@ -13,7 +13,7 @@ from CSXCAD.CSProperties import CSProperties
 from CSXCAD.CSPrimitives import CSPrimitives
 from pyems.pcb import PCBProperties
 from pyems.utilities import apply_transform, append_transform
-from pyems.coordinate import Coordinate2, Coordinate3, Axis, Box3
+from pyems.coordinate import Coordinate2, Box2, Coordinate3, Axis, Box3
 from pyems.simulation import Simulation
 from pyems.port import MicrostripPort, CoaxPort, DifferentialMicrostripPort
 import pyems.calc as calc
@@ -95,7 +95,7 @@ def _set_box(
     position: Coordinate3,
     transform: CSTransform,
     priority: int,
-) -> None:
+) -> List[Coordinate2]:
     """
     Add a box by first constructing the box at the origin, then
     transforming it and finally translating it for the desired
@@ -108,33 +108,82 @@ def _set_box(
     translate.AddTransform("Translate", position.coordinate_list())
     apply_transform(box, translate)
 
+    tr_box = Box2(
+        Coordinate2(start[0], start[1]), Coordinate2(stop[0], stop[1])
+    )
+    corners = tr_box.corners()
+    tr_coordinates = []
+    for corner in corners:
+        corner_list = corner.coordinate_list()
+        corner_list.append(0)
+        if transform is not None:
+            corner_list = transform.Transform(corner_list)
+        corner_list = translate.Transform(corner_list)
+        tr_coordinates.append(Coordinate2(corner_list[0], corner_list[1]))
+
+    return tr_coordinates
+
+
+def _polygon_points(points: List[Coordinate2]) -> List[List[float]]:
+    """
+    Convert a set of coordinates to the format expected by CSXCAD.
+
+    CSXCAD expects a list of 2 lists of positions, where the first
+    inner list describes the x-coordinate positions and the second
+    inner list describes the y-coordinate positions.  Each polygon
+    point is given by the x- and y-coordinate with matching list
+    position.
+    """
+    list1 = []
+    list2 = []
+    for point in points:
+        list1.append(point.x)
+        list2.append(point.y)
+
+    return [list1, list2]
+
 
 def _set_polygon(
     prop: CSProperties,
-    points: List[List[float]],
+    points: List[Coordinate2],
     elevation: float,
     position: Coordinate3,
     transform: CSTransform,
     priority: int,
-) -> None:
+) -> List[Coordinate2]:
     """
-    :param points: A list of 2 lists of positions, where the first
-        inner list describes the x-coordinate positions and the second
-        inner list describes the y-coordinate positions.  Each polygon
-        point is given by the x- and y-coordinate with matching list
-        position.  The z-coordinate point is given by `elevation`.
+    :param points: A list 2D coordinates describing the xy points of
+        the polygon.  The z-coordinate point is given by `elevation`.
         Select the points relative to the origin such that `transform`
         will be applied about the origin.  After `transform` is
         applied, the origin will be translated to `position`.
+
+    :returns: Fully transformed polygon points.
     """
     poly = prop.AddPolygon(
-        points=points, norm_dir=2, elevation=elevation, priority=priority,
+        points=_polygon_points(points),
+        norm_dir=2,
+        elevation=elevation,
+        priority=priority,
     )
     translate_vec = position.coordinate_list()
     translate = CSTransform()
     translate.AddTransform("Translate", translate_vec)
     apply_transform(poly, transform)
     apply_transform(poly, translate)
+
+    transformed_coordinates = []
+    for point in points:
+        point_list = point.coordinate_list()
+        point_list.append(0)
+        if transform is not None:
+            point_list = transform.Transform(point_list)
+        point_list = translate.Transform(point_list)
+        transformed_coordinates.append(
+            Coordinate2(point_list[0], point_list[1])
+        )
+
+    return transformed_coordinates
 
 
 def _set_cylinder(
@@ -224,6 +273,7 @@ class Structure(ABC):
             added.
         """
         self._sim = sim
+        self._polygons = None
 
     @abstractmethod
     def construct(self, position) -> None:
@@ -245,6 +295,12 @@ class Structure(ABC):
         """
         """
         return self._sim
+
+    @property
+    def polygons(self) -> List:
+        """
+        """
+        return self._polygons
 
     @classmethod
     def _get_ctr(cls):
@@ -1025,6 +1081,7 @@ class Microstrip(Structure):
         self._measurement_shift = measurement_shift
         self._transform = transform
         self._index = None
+        self._polygons = []
 
         self._check_ref_impedance()
         self._check_coplanar_gap()
@@ -1076,9 +1133,10 @@ class Microstrip(Structure):
     def _construct_port(self) -> None:
         """
         """
+        box = self._port_box()
         MicrostripPort(
             sim=self.pcb.sim,
-            box=self._port_box(),
+            box=box,
             propagation_axis=self._propagation_axis,
             excitation_axis=self._excitation_axis(),
             number=self.port_number,
@@ -1090,6 +1148,11 @@ class Microstrip(Structure):
             ref_impedance=self._ref_impedance,
             measurement_shift=self._measurement_shift,
         )
+        trace_box = Box2(
+            Coordinate2(box.min_corner.x, box.min_corner.y),
+            Coordinate2(box.max_corner.x, box.max_corner.y),
+        )
+        self.polygons.append(trace_box.corners())
 
     def _construct_trace(self) -> None:
         """
@@ -1111,7 +1174,7 @@ class Microstrip(Structure):
         stop[perp_axis] = self._width / 2
 
         pos = Coordinate3(self.position.x, self.position.y, 0)
-        _set_box(
+        poly_points = _set_box(
             prop=trace_prop,
             start=start,
             stop=stop,
@@ -1119,6 +1182,7 @@ class Microstrip(Structure):
             transform=self.transform,
             priority=priorities["trace"],
         )
+        self.polygons.append(poly_points)
 
     def _construct_gap(self) -> None:
         """
@@ -1565,6 +1629,7 @@ class MicrostripCoupler(Structure):
         self._transform = transform
         self._index = None
         self._port_positions = [None, None, None, None]
+        self._polygons = []
 
         if self._position is not None:
             self.construct(self._position)
@@ -1594,7 +1659,7 @@ class MicrostripCoupler(Structure):
             else:
                 gnd_gap = (None, self._gnd_gap[i])
 
-            Microstrip(
+            microstrip = Microstrip(
                 pcb=self._pcb,
                 position=Coordinate2(self._position.x, ypos),
                 length=self._length,
@@ -1604,6 +1669,7 @@ class MicrostripCoupler(Structure):
                 gnd_layer=None,
                 gnd_gap=gnd_gap,
             )
+            self._polygons += microstrip.polygons
 
     def _construct_trace_gap(self) -> None:
         """
@@ -1655,8 +1721,9 @@ class MicrostripCoupler(Structure):
             ),
             transform=tr,
         )
+        self._polygons += miter.polygons
 
-        Miter(
+        miter = Miter(
             pcb=self._pcb,
             position=Coordinate2(
                 self._position.x + self._length / 2,
@@ -1669,6 +1736,8 @@ class MicrostripCoupler(Structure):
             miter=self._miter,
             transform=self._transform,
         )
+
+        self._polygons += miter.polygons
 
         self._set_port_positions(miter.length())
 
@@ -1892,7 +1961,7 @@ class Taper(Structure):
 
     def _trapezoid_points(
         self, width1: float, width2: float
-    ) -> List[List[float]]:
+    ) -> List[Coordinate2]:
         """
         Returns 4 trapezoid corners in the order bottom left, top
         left, bottom right, top right.
@@ -1904,7 +1973,12 @@ class Taper(Structure):
         yr1 = -width2 / 2
         yr2 = width2 / 2
 
-        return [[xmin, xmin, xmax, xmax], [yl1, yl2, yr2, yr1]]
+        return [
+            Coordinate2(xmin, yl1),
+            Coordinate2(xmin, yl2),
+            Coordinate2(xmax, yr2),
+            Coordinate2(xmax, yr1),
+        ]
 
     def _taper_name(self) -> str:
         """
@@ -1979,6 +2053,7 @@ class Miter(Structure):
         self._gap = gap
         self._transform = transform
         self._index = self._get_inc_ctr()
+        self._polygons = []
 
         if self.position is not None:
             self.construct(self.position)
@@ -2042,7 +2117,7 @@ class Miter(Structure):
             thickness=self.pcb.pcb_prop.copper_thickness(self._pcb_layer),
         )
         pos = Coordinate3(self.position.x, self.position.y, 0)
-        _set_polygon(
+        poly_points = _set_polygon(
             prop=prop,
             points=self._trace_points(),
             elevation=self.pcb.copper_layer_elevation(self._pcb_layer),
@@ -2050,6 +2125,7 @@ class Miter(Structure):
             transform=self.transform,
             priority=priorities["trace"],
         )
+        self.polygons.append(poly_points)
 
     def _construct_gap(self) -> None:
         """
@@ -2079,54 +2155,53 @@ class Miter(Structure):
         """
         return self.inset_length() + self._trace_width
 
-    def _trace_points(self) -> List[List[float]]:
+    def _trace_points(self) -> List[Coordinate2]:
         """
         List of miter x and y-coordinates such that self.position is
         taken as the origin.  See _set_polygon for how these points
         are used.
         """
         inset_len = self.inset_length()
-        pts = [[], []]
+        pts = []
         # 1st point from top left, proceeding counterclockwise
-        pts[0].append(0)
-        pts[1].append(self._trace_width / 2)
+        pts.append(Coordinate2(0, self._trace_width / 2))
         # 2
-        pts[0].append(0)
-        pts[1].append(-self._trace_width / 2)
+        pts.append(Coordinate2(0, -self._trace_width / 2))
         # 3
-        pts[0].append(inset_len)
-        pts[1].append(-self._trace_width / 2)
+        pts.append(Coordinate2(inset_len, -self._trace_width / 2))
         # 4
-        pts[0].append(inset_len)
-        pts[1].append(-self._trace_width / 2 - inset_len)
+        pts.append(Coordinate2(inset_len, -self._trace_width / 2 - inset_len))
         # 5
-        pts[0].append(inset_len + self._trace_width)
-        pts[1].append(-self._trace_width / 2 - inset_len)
+        pts.append(
+            Coordinate2(
+                inset_len + self._trace_width,
+                -self._trace_width / 2 - inset_len,
+            )
+        )
 
         return pts
 
-    def _gap_points(self) -> List[List[float]]:
+    def _gap_points(self) -> List[Coordinate2]:
         """
         """
         inset_len = self.inset_length()
-        pts = [[], []]
+        pts = []
         # 1
-        pts[0].append(0)
-        pts[1].append(self._trace_width / 2 + self._gap)
+        pts.append(0, self._trace_width / 2 + self._gap)
         # 2
-        pts[0].append(0)
-        pts[1].append(-self._trace_width / 2 - inset_len)
+        pts.append(0, -self._trace_width / 2 - inset_len)
         # 3
-        pts[0].append(self._trace_width + inset_len + self._gap)
-        pts[1].append(-self._trace_width / 2 - inset_len)
+        pts.append(
+            self._trace_width + inset_len + self._gap,
+            -self._trace_width / 2 - inset_len,
+        )
         # 4
-        pts[0].append(self._trace_width + inset_len + self._gap)
-        pts[1].append(
-            -self._trace_width / 2 - inset_len + (self._gap / np.sqrt(2))
+        pts.append(
+            self._trace_width + inset_len + self._gap,
+            -self._trace_width / 2 - inset_len + (self._gap / np.sqrt(2)),
         )
         # 5
-        pts[0].append(self._gap / np.sqrt(2))
-        pts[1].append(self._trace_width / 2 + self._gap)
+        pts.append(self._gap / np.sqrt(2), self._trace_width / 2 + self._gap)
 
         return pts
 

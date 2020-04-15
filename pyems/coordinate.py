@@ -260,6 +260,22 @@ class Box2:
         """
         return [self.start(), self.stop()]
 
+    def corners(self) -> List[Coordinate2]:
+        """
+        """
+        # TODO should be a more concise way to do this.
+        corner1 = deepcopy(self.min_corner)
+
+        corner2 = deepcopy(self.min_corner)
+        corner2.y = self.max_corner.y
+
+        corner3 = deepcopy(self.max_corner)
+
+        corner4 = deepcopy(self.min_corner)
+        corner4.x = self.max_corner.x
+
+        return [corner1, corner2, corner3, corner4]
+
     def center(self) -> Coordinate2:
         """
         """
