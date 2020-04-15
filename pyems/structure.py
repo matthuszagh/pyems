@@ -2210,6 +2210,7 @@ class SMDPassiveDimensions:
 common_smd_passives = {
     "0201C": SMDPassiveDimensions(length=0.6e-3, width=0.3e-3, height=0.3e-3),
     "0402C": SMDPassiveDimensions(length=1e-3, width=0.5e-3, height=0.5e-3),
+    "0603C": SMDPassiveDimensions(length=1.6e-3, width=0.8e-3, height=0.8e-3),
 }
 
 
