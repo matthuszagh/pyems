@@ -1187,10 +1187,8 @@ class Microstrip(Structure):
         """
         """
         if (
-            self._gnd_gap[0] is None
-            or self._gnd_gap[1] is None
-            and self._trace_layer in self._pcb.copper_pours()
-        ):
+            self._gnd_gap[0] is None or self._gnd_gap[1] is None
+        ) and self._trace_layer in self._pcb.copper_pours():
             raise RuntimeWarning(
                 "Ground gaps have not been set on the trace layer "
                 "where a copper pour has been set. This is most "
@@ -1394,6 +1392,9 @@ class DifferentialMicrostrip(Structure):
     def _construct_gap(self) -> None:
         """
         """
+        if self._trace_layer not in self._pcb.copper_pours():
+            return
+
         freq = self._pcb.sim.reference_frequency
         gap_prop = self._pcb.sim.csx.AddMaterial(
             self._gap_name(),
