@@ -1,2 +1,5 @@
 **/__pycache__
 /examples/sim/
+/build/
+/dist/
+*.egg-info
