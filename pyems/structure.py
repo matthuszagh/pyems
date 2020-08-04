@@ -1056,10 +1056,28 @@ class Microstrip(Structure):
             should have an associated excitation.
         :param invert_excitation: If True, flip the excitation to be
             in the opposite direction.
-        :param feed_impedance: See PlanarPort.
-        :param feed_shift: See PlanarPort.
-        :param ref_impedance: See PlanarPort.
-        :param measurement_shift: See PlanarPort.
+        :param feed_impedance: The feeding impedance value.  The
+            default value of None creates an infinite impedance.  If
+            you use the default value ensure that the port is
+            terminated by a PML.  When performing a characteristic
+            impedance measurement use the default value and PML, which
+            gives better results than attempting to use a matching
+            impedance.
+        :param feed_shift: The amount by which to shift the feed
+            as a fraction of the total port length.  The final position
+            will be influenced by this value but adjusted for the mesh
+            used.
+        :param ref_impedance: The impedance used to calculate the port
+            voltage and current values.  If left as the default value
+            of None, the calculated characteristic impedance is used
+            to calculate these values.
+        :param measurement_shift: The amount by which to shift the
+            measurement probes as a fraction of the total port length.
+            By default, the measurement port is placed halfway between
+            the start and stop.  Like `feed_shift`, the final position
+            will be adjusted for the mesh used.  This is important
+            since voltage probes need to lie on mesh lines and current
+            probes need to be placed equidistant between them.
         :param transform: CSTransform to apply to microstrip.
         """
         self._pcb = pcb
