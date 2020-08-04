@@ -494,7 +494,6 @@ class Mesh:
                         len(self.mesh_lines[dim])
                         - mesh_idx
                         - upper_pml_cells
-                        - 1
                     )
                     del self.mesh_lines[dim][-del_num:]
 
