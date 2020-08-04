@@ -415,6 +415,9 @@ def minimize(func, initial, tol, bounds=None):
 
     :returns: Array of function arguments that minimize the function,
               or a single value if `func` only takes 1 argument.
+
+    Example invocation:
+    res = minimize(func=func, initial=[1.2], tol=1e-2, bounds=[(0, None)])
     """
     if bounds is None:
         if type(initial) is list:
