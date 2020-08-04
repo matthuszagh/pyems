@@ -44,7 +44,7 @@ view simulation field dumps (recommended) you must also have a copy of
 [[https://www.paraview.org/][ParaView]]. All of this software is (of course) open source and free to
 download and use.
 
-* TODO Usage
+* Usage
 I have not yet written a proper reference documentation for pyems. To
 help new users get acquainted with it, I've written a tutorial
 presented in this section. This should help users understand the API
