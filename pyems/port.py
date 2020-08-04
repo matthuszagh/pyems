@@ -1297,7 +1297,7 @@ class RectWaveguidePort(Port):
         self,
         sim: Simulation,
         box: Box3,
-        propagation_axis: int,
+        propagation_axis: Axis,
         mode_name: str = "TE10",
         excite: bool = False,
         delay: float = 0,
@@ -1315,7 +1315,7 @@ class RectWaveguidePort(Port):
         """
         super().__init__(sim, excite)
         self._box = box
-        self.propagation_axis = propagation_axis
+        self._propagation_axis = propagation_axis
         self.mode_name = mode_name
         self.excite = excite
         self.delay = delay
@@ -1334,6 +1334,11 @@ class RectWaveguidePort(Port):
         self._set_direction()
         self._parse_mode_name()
         self._set_func()
+
+    def propagation_axis(self) -> Axis:
+        """
+        """
+        return self._propagation_axis
 
     @property
     def box(self) -> Box3:
@@ -1370,13 +1375,13 @@ class RectWaveguidePort(Port):
         """
         shell_prop = self._sim.csx.AddMetal("rect_wg_metal")
         back_face = self._shell_face_box(
-            const_dim=self.propagation_axis,
+            const_dim=self.propagation_axis().intval(),
             const_dim_idx=0,
             thickness=thickness,
         )
         shell_prop.AddBox(start=back_face.start(), stop=back_face.stop())
         dims = list(range(3))
-        del dims[self.propagation_axis]
+        del dims[self.propagation_axis().intval()]
         for dim in dims:
             for i in range(2):
                 face = self._shell_face_box(
@@ -1420,7 +1425,7 @@ class RectWaveguidePort(Port):
             np.abs(self.box.max_corner[dim] - self.box.min_corner[dim])
             for dim in range(3)
         ]
-        del dimensions[self.propagation_axis]
+        del dimensions[self.propagation_axis().intval()]
         self.a = np.amax(dimensions)
         self.b = np.amin(dimensions)
 
@@ -1449,16 +1454,16 @@ class RectWaveguidePort(Port):
         """
         self.direction = int(
             np.sign(
-                self.box.max_corner[self.propagation_axis]
-                - self.box.min_corner[self.propagation_axis]
+                self.box.max_corner[self.propagation_axis().intval()]
+                - self.box.min_corner[self.propagation_axis().intval()]
             )
         )
 
     def _set_func(self) -> None:
         """
         """
-        ny_p = (self.propagation_axis + 1) % 3
-        ny_pp = (self.propagation_axis + 2) % 3
+        ny_p = (self.propagation_axis().intval() + 1) % 3
+        ny_pp = (self.propagation_axis().intval() + 2) % 3
 
         xyz = "xyz"
         if self.box.min_corner[ny_p] != 0:
@@ -1523,12 +1528,13 @@ class RectWaveguidePort(Port):
         Set measurement probes.
         """
         _, prop_pos = mesh.nearest_mesh_line(
-            self.propagation_axis, self.box[1][self.propagation_axis]
+            self.propagation_axis().intval(),
+            self.box[1][self.propagation_axis().intval()],
         )
 
         probe_box = deepcopy(self.box)
-        probe_box.min_corner[self.propagation_axis] = prop_pos
-        probe_box.max_corner[self.propagation_axis] = prop_pos
+        probe_box.min_corner[self.propagation_axis().intval()] = prop_pos
+        probe_box.max_corner[self.propagation_axis().intval()] = prop_pos
 
         self.vprobes = [
             Probe(
@@ -1555,15 +1561,16 @@ class RectWaveguidePort(Port):
         """
         if self.excite:
             _, prop_pos = mesh.nearest_mesh_line(
-                self.propagation_axis, self.box[0][self.propagation_axis]
+                self.propagation_axis().intval(),
+                self.box[0][self.propagation_axis().intval()],
             )
 
             feed_box = deepcopy(self.box)
-            feed_box.min_corner[self.propagation_axis] = prop_pos
-            feed_box.max_corner[self.propagation_axis] = prop_pos
+            feed_box.min_corner[self.propagation_axis().intval()] = prop_pos
+            feed_box.max_corner[self.propagation_axis().intval()] = prop_pos
 
             feed_vec = np.ones(3)
-            feed_vec[self.propagation_axis] = 0
+            feed_vec[self.propagation_axis().intval()] = 0
             weight_func = [str(x) for x in self.e_func]
             feed = Feed(
                 sim=self._sim,
