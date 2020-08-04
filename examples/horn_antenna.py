@@ -7,7 +7,7 @@ from pyems.port import RectWaveguidePort
 from pyems.simulation import Simulation
 from pyems.field_dump import FieldDump
 from pyems.structure import standard_waveguides
-from pyems.coordinate import Coordinate3, Box3
+from pyems.coordinate import Coordinate3, Box3, Axis
 from pyems.mesh import Mesh
 from pyems.nf2ff import NF2FF
 
@@ -17,7 +17,7 @@ sim = Simulation(freq=freq, unit=unit)
 
 metal = sim.csx.AddMetal("metal")
 stl = metal.AddPolyhedronReader(
-    filename=os.path.abspath("../../hardware/cad/horn-antenna.stl")
+    filename=os.path.abspath("horn-antenna.stl")
 )
 stl.ReadFile()
 
@@ -30,7 +30,7 @@ port = RectWaveguidePort(
         Coordinate3(-wg.a / 2, -wg.b / 2, -wg_len),
         Coordinate3(wg.a / 2, wg.b / 2, 0),
     ),
-    propagation_axis=2,
+    propagation_axis=Axis("z"),
     excite=True,
 )
 port.add_metal_shell(thickness=5)
