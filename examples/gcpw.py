@@ -39,6 +39,7 @@ Microstrip(
     gnd_layer=1,
     gnd_gap=(gap, gap),
     port_number=1,
+    ref_impedance=50,
     excite=True,
 )
 
