@@ -9,6 +9,8 @@ let
     pyems
     matplotlib
     pytest
+    twine
+    wheel
   ]);
 in pkgs.mkShell rec {
   buildInputs = with pkgs; [
