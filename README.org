@@ -82,17 +82,16 @@ unit = 1e-3
 sim = Simulation(freq=freq, unit=unit, reference_frequency=ref_freq)
 #+end_src
 
-This first code block instantiates a src_python[:exports
-code]{Simulation()} object. src_python[:exports code]{Simulation}
-initializes the underlying OpenEMS objects for the simulation
-structure and the FDTD algorithm. ~freq~ specifies the frequency
-values to simulate. This simulation uses a granularity of 501 values
-from DC to 18GHz. The post-simulation analysis results (such as the
-S-parameters) will be given for these frequency values. Bear in mind
-that using a smaller granularity results in a longer simulation
-time. ~unit~ specifies the length unit to use in meters. By using
-~1e-3~, we've told pyems that all of our subsequent dimensions will be
-given in mm.
+This first code block instantiates a ~Simulation()~
+object. ~Simulation~ initializes the underlying OpenEMS objects for
+the simulation structure and the FDTD algorithm. ~freq~ specifies the
+frequency values to simulate. This simulation uses a granularity of
+501 values from DC to 18GHz. The post-simulation analysis results
+(such as the S-parameters) will be given for these frequency
+values. Bear in mind that using a smaller granularity results in a
+longer simulation time. ~unit~ specifies the length unit to use in
+meters. By using ~1e-3~, we've told pyems that all of our subsequent
+dimensions will be given in mm.
 
 Certain dielectric properties are frequency-dependent. However,
 OpenEMS requires that all dielectric properties be constant in a
