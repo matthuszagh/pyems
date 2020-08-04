@@ -1,28 +1,28 @@
 * About
 Pyems is a Python interface to the electromagnetic field solver,
-[[https://openems.de/start/index.php][OpenEMS]]. It uses OpenEMS's own Python interface to hook into
-OpenEMS. However, unlike that interface, whose primary purpose is to
-expose the underlying C++ interface as a Python API, pyems provides
+[[https://openems.de/start/index.php][OpenEMS]]. It uses OpenEMS's own Python interface to hook into [[https://github.com/thliebig/CSXCAD][CSXCAD]]
+and [[https://github.com/thliebig/openEMS][OpenEMS]]. However, unlike that interface, whose primary purpose is
+to expose the underlying C++ interface as a Python API, pyems provides
 high-level functionality intended to facilitate and accelerate the
-simulation process. Additionally, OpenEMS contains a number of subtle
+simulation process. Moreover, OpenEMS contains a number of subtle
 usage traps that can be confusing to new users, and requires that
 those users understand certain limitations of the FDTD
-algorithm. Pyems attempts to present a higher-level interface that
-does not expose these corner cases, ensures the correct usage of the
-underlying OpenEMS interface, and shifts the user's focus away from
-implementation details.
+algorithm. Pyems attempts (when possible) to enforce correct usage in
+these situations and in other cases to make the usage tradeoffs more
+visible.
 
 To accomplish this goal, pyems provides:
-1. configurable, automatic mesh generation
-2. [[https://kicad-pcb.org/][KiCad]] footprint creation
-3. simple port impedance and s-parameter calculation
-4. an intuitive and concise interface for instantiating PCB-based
-   structures
-5. functions performing frequently-needed calculations involved with
-   microwave design
-6. methods to optimize a simulation structure to achieve a desired
-   result for any arbitrary parameter
-7. a simple, convenient interface that ties it all together
+1. Configurable, automatic mesh generation.
+2. [[https://kicad-pcb.org/][KiCad]] footprint creation.
+3. Simple port impedance and S-parameter calculations.
+4. A collection of cooperative classes for building commonly-needed
+   microwave structures (many of which are PCB-based).
+5. Functions performing frequently-needed calculations involved with
+   microwave design.
+6. Methods to optimize a simulation structure to achieve a desired
+   result for any arbitrary parameter.
+7. A simple, expressive interface intended to make the simulation
+   process more intuitive.
 
 Although ease of use is one of pyems's primary goals, another one of
 its major goals is to not restrict the power of OpenEMS. To this
