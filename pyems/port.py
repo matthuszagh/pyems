@@ -1665,11 +1665,30 @@ class CoaxPort(Port):
                 "to a coordinate axis."
             )
 
+    def _propagation_axis(self) -> Axis:
+        """
+        """
+        for i in range(3):
+            if np.isclose(self._start[i], self._stop[i]):
+                return Axis(i)
+        raise RuntimeError("Unable to determine propagation axis.")
+
+    def _direction(self) -> int:
+        """
+        Compute whether the port faces in the positive or negative
+        direction of propagation_axis.
+        """
+        prop_axis = self._propagation_axis().axis
+        direction = int(
+            np.sign(self._stop[prop_axis] - self._start[prop_axis])
+        )
+        return direction
+
     def _set_core(self) -> None:
         """
         """
         # TODO bug?? cylinder ignored if start > stop
-        if self._direction == 1:
+        if self._direction() == 1:
             start = self._start.coordinate_list()
             stop = self._stop.coordinate_list()
         else:
