@@ -315,9 +315,8 @@ def _pos_in_bounds(pos: float, lower: float, upper: float) -> bool:
 def _type_at_pos(prims: List[CSPrimitives], dim: int, pos: float) -> Type:
     """
     The material type for a given dimension and position.  If multiple
-    properties exist for the dimension and position, metal is returned
-    if any of the properties are metal and nonmetal is returned
-    otherwise.
+    properties exist for the dimension and position, the property type
+    corresponding to the smallest dimension is used.
 
     TODO this ignores CSXCAD priorities.  I think this is fine since
     this only determines the mesh density, but we could always extend
@@ -329,14 +328,21 @@ def _type_at_pos(prims: List[CSPrimitives], dim: int, pos: float) -> Type:
 
     :returns: The type of the material at that position.
     """
+    smallest_dim = np.inf
+    current_type = None
+
     for prim in prims:
         prim_bounds = _get_prim_bounds(prim)
-        if _float_inside(
-            pos, prim_bounds[dim][0], prim_bounds[dim][1]
-        ) and _prim_metalp(prim):
-            return Type.metal
+        if _float_inside(pos, prim_bounds[dim][0], prim_bounds[dim][1]):
+            dim_size = prim_bounds[dim][1] - prim_bounds[dim][0]
+            if dim_size < smallest_dim:
+                smallest_dim = dim_size
+                if _prim_metalp(prim):
+                    current_type = Type.metal
+                else:
+                    current_type = Type.nonmetal
 
-    return Type.nonmetal
+    return current_type
 
 
 class Mesh:
