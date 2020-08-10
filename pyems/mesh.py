@@ -497,9 +497,7 @@ class Mesh:
                 mesh_idx, _ = self._line_above(dim, pos)
                 if len(self.mesh_lines[dim]) - mesh_idx > upper_pml_cells:
                     del_num = (
-                        len(self.mesh_lines[dim])
-                        - mesh_idx
-                        - upper_pml_cells
+                        len(self.mesh_lines[dim]) - mesh_idx - upper_pml_cells
                     )
                     del self.mesh_lines[dim][-del_num:]
 
@@ -1035,14 +1033,20 @@ class Mesh:
                 first_spacing = lines[1] - lines[0]
                 last_spacing = lines[-1] - lines[-2]
                 if not np.isclose(lower, self.sim_bounds[dim][0]):
-                    if self._pos_meshed(dim, lower):
+                    if (
+                        self._pos_meshed(dim, lower)
+                        and self._type_below(dim, lower) == Type.metal
+                    ):
                         adj = 2 * first_spacing / 3
                     else:
                         adj = first_spacing / 3
                     lower += adj
                     # lower_spacing += adj
                 if not np.isclose(upper, self.sim_bounds[dim][1]):
-                    if self._pos_meshed(dim, upper):
+                    if (
+                        self._pos_meshed(dim, upper)
+                        and self._type_above(dim, upper) == Type.metal
+                    ):
                         adj = 2 * last_spacing / 3
                     else:
                         adj = last_spacing / 3
