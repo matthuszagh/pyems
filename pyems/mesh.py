@@ -335,7 +335,13 @@ def _type_at_pos(prims: List[CSPrimitives], dim: int, pos: float) -> Type:
         prim_bounds = _get_prim_bounds(prim)
         if _float_inside(pos, prim_bounds[dim][0], prim_bounds[dim][1]):
             dim_size = prim_bounds[dim][1] - prim_bounds[dim][0]
-            if dim_size < smallest_dim:
+            # If there are multiple primitives of the same size, we
+            # want to register metal if one of the primitives is metal.
+            if np.isclose(dim_size, smallest_dim):
+                if _prim_metalp(prim):
+                    current_type = Type.metal
+                    smallest_dim = dim_size
+            elif dim_size < smallest_dim:
                 smallest_dim = dim_size
                 if _prim_metalp(prim):
                     current_type = Type.metal
