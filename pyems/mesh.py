@@ -1038,7 +1038,14 @@ class Mesh:
             if is_metal:
                 first_spacing = lines[1] - lines[0]
                 last_spacing = lines[-1] - lines[-2]
-                if not np.isclose(lower, self.sim_bounds[dim][0]):
+                # If there is already a line at the boundary (due to a
+                # planar metal) there is no need to shift the line
+                # inside the metal region. Moreover, doing so can
+                # create a small spacing adjacent to a much larger
+                # spacing, which violates smoothness.
+                if not np.isclose(
+                    lower, self.sim_bounds[dim][0]
+                ) and not self._is_fixed_line(dim, lower):
                     if (
                         self._pos_meshed(dim, lower)
                         and self._type_below(dim, lower) == Type.metal
@@ -1048,7 +1055,9 @@ class Mesh:
                         adj = first_spacing / 3
                     lower += adj
                     # lower_spacing += adj
-                if not np.isclose(upper, self.sim_bounds[dim][1]):
+                if not np.isclose(
+                    upper, self.sim_bounds[dim][1]
+                ) and not self._is_fixed_line(dim, upper):
                     if (
                         self._pos_meshed(dim, upper)
                         and self._type_above(dim, upper) == Type.metal
