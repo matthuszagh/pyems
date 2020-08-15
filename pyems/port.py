@@ -50,7 +50,7 @@ from pyems.utilities import array_index
 from pyems.calc import wavenumber
 from pyems.feed import Feed
 from pyems.priority import priorities
-from pyems.physical_constant import Z0
+from pyems.const import Z0
 
 
 class Port(ABC):

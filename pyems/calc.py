@@ -3,7 +3,7 @@ import numpy as np
 import scipy.optimize
 from scipy.optimize import curve_fit
 from scipy.special import polygamma
-from pyems.physical_constant import C0, MUE0, Z0
+from pyems.const import C0, MUE0, Z0
 from pyems.utilities import print_table
 
 

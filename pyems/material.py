@@ -1,7 +1,7 @@
 from typing import List, Tuple
 import numpy as np
 from pyems.utilities import sort_table_by_col, table_interp_val
-from pyems.physical_constant import EPS0
+from pyems.const import EPS0
 
 
 def loss_to_kappa(loss: float, freq: float, epsr: float) -> float:
