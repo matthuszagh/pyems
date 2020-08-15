@@ -28,6 +28,7 @@ def construct_circle(
     normal: Axis,
     priority: int,
     poly_faces: float = 60,
+    transform: CSTransform = None,
 ) -> CSPrimitives:
     """
     :param normal: Normal direction to the surface of the circle. 0, 1, or 2,
@@ -48,6 +49,8 @@ def construct_circle(
         elevation=0,
         length=0,
     )
+    if transform is not None:
+        apply_transform(prim, transform)
     tr = CSTransform()
     tr.AddTransform("Translate", center.coordinate_list())
     apply_transform(prim, tr)
@@ -572,6 +575,7 @@ class Via(Structure):
         layers: range = None,
         noconnect_layers: List[int] = [],
         fill: bool = False,
+        transform: CSTransform = None,
     ):
         """
         :param pcb: PCB object to which the via should be added.
@@ -614,6 +618,9 @@ class Via(Structure):
             efficiency.  I don't have enough data to definitively say
             which is better.  Until I have better information the
             default will be the dimensionally-accurate version.
+        :param transform: A transform to apply to the via.  This is
+            unlikely to be needed, since vias are typically just
+            placed on a PCB, but is provided nonetheless.
         """
         self._pcb = pcb
         self._position = position
@@ -631,6 +638,7 @@ class Via(Structure):
             self._layers, noconnect_layers
         )
         self._fill = fill
+        self._transform = transform
         self._index = None
 
         if self.position is not None:
@@ -666,36 +674,38 @@ class Via(Structure):
     def _construct_via(self) -> None:
         """
         """
-        start = [
+        start = Coordinate3(
             self.position.x,
             self.position.y,
             self.pcb.copper_layer_elevation(self.layers[0]),
-        ]
-        stop = [
+        )
+        stop = Coordinate3(
             self.position.x,
             self.position.y,
             self.pcb.copper_layer_elevation(self.layers[-1]),
-        ]
+        )
         via_prop = self.pcb.sim.csx.AddMetal(self._via_name())
-        via_prim = via_prop.AddCylinder(
-            priority=priorities["trace"],
+        _set_cylinder(
+            prop=via_prop,
             start=start,
             stop=stop,
             radius=self._shell_radius(),
+            transform=self._transform,
+            priority=priorities["trace"],
         )
-        apply_transform(via_prim, self.pcb.transform)
 
         if not self._fill:
             air_prop = self.pcb.sim.csx.AddMaterial(
                 self._air_name(), epsilon=1
             )
-            air_prim = air_prop.AddCylinder(
-                priority=priorities["via_fill"],
+            _set_cylinder(
+                prop=air_prop,
                 start=start,
                 stop=stop,
                 radius=self._drill_radius(),
+                transform=self._transform,
+                priority=priorities["via_fill"],
             )
-            apply_transform(air_prim, self.pcb.transform)
 
     def _construct_pads(self) -> None:
         """
@@ -713,8 +723,8 @@ class Via(Structure):
                 radius=self.pad_radius(),
                 normal=Axis("z"),
                 priority=priorities["trace"],
+                transform=self._transform,
             )
-            apply_transform(pad_prim, self.pcb.transform)
 
     def _construct_antipads(self) -> None:
         """
@@ -736,8 +746,8 @@ class Via(Structure):
                 radius=self._antipad_radius(),
                 normal=Axis("z"),
                 priority=priorities["keepout"],
+                transform=self._transform,
             )
-            apply_transform(antipad_prim, self.pcb.transform)
 
     def _air_name(self) -> str:
         """
