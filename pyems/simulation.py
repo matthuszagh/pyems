@@ -224,7 +224,7 @@ class Simulation:
         """
         """
         if path is None:
-            path = self.sim_dir + "/" + self._file_name() + ".csx"
+            path = self.sim_dir + "/" + self._file_name() + ".xml"
         self.csx.Write2XML(path)
         self._csx_path = path
 
