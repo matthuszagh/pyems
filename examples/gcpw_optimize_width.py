@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import numpy as np
 from scipy.optimize import minimize
@@ -42,6 +42,7 @@ def gcpw(trace_width: float):
         gnd_layer=1,
         gnd_gap=(gap, gap),
         port_number=1,
+        ref_impedance=50,
         excite=True,
     )
 
