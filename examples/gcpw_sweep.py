@@ -5,7 +5,8 @@ from pyems.pcb import common_pcbs
 from pyems.structure import PCB, Microstrip
 from pyems.coordinate import Box2, Coordinate2, Axis
 from pyems.mesh import Mesh
-from pyems.simulation import Simulation, sweep
+from pyems.simulation import Simulation
+from pyems.calc import sweep
 from pyems.utilities import mil_to_mm, array_index, print_table
 
 
@@ -19,8 +20,18 @@ width_dev_factor = 0.1
 center_width = 0.34
 gap = mil_to_mm(6)
 via_gap = 0.4
-# num_points = 11
-num_points = 31
+num_points = 1
+# num_points = 31
+
+def sim_impedance(sim: Simulation):
+    """
+    Get the characteristic impedance of a simulation.
+    """
+    sim.run(csx=False)
+    ports = sim.ports
+    z0 = ports[0].impedance()
+    idx = array_index(sim.center_frequency(), sim.freq)
+    return np.abs(z0[idx])
 
 
 def gen_sim(width: float) -> Simulation:
@@ -51,32 +62,20 @@ def gen_sim(width: float) -> Simulation:
         trace_layer=0,
         gnd_layer=1,
         gnd_gap=(gap, gap),
-        via_gap=(via_gap, via_gap),
-        via=None,
-        via_spacing=1.27,
         port_number=1,
+        feed_shift=0.3,
+        ref_impedance=50,
         excite=True,
     )
     Mesh(
         sim=sim,
         metal_res=1 / 80,
         nonmetal_res=1 / 40,
-        smooth=(1.1, 1.5, 1.5),
+        smooth=(1.2, 1.5, 1.5),
         min_lines=25,
-        expand_bounds=((0, 0), (8, 8), (8, 8)),
+        expand_bounds=((0, 0), (8, 8), (8, 20)),
     )
-    return sim
-
-
-def sim_impedance(sim: Simulation):
-    """
-    Get the characteristic impedance of a simulation.
-    """
-    sim.run(csx=False)
-    ports = sim.ports
-    z0 = ports[0].impedance()
-    idx = array_index(sim.center_frequency(), sim.freq)
-    return np.abs(z0[idx])
+    return sim_impedance(sim)
 
 
 widths = np.linspace(
@@ -84,6 +83,5 @@ widths = np.linspace(
     center_width * (1 + width_dev_factor),
     num_points,
 )
-sims = [gen_sim(width=width) for width in widths]
-sim_vals = sweep(sims=sims, func=sim_impedance, processes=11)
+sim_vals = sweep(func=gen_sim, params=widths, processes=11)
 print_table(data=[widths, sim_vals], col_names=["width", "z0"], prec=[4, 4])
