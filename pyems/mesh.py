@@ -7,8 +7,8 @@ from CSXCAD.CSPrimitives import CSPrimitives
 from pyems.simulation import Simulation
 from pyems.calc import wavelength
 from pyems.coordinate import Box3, Coordinate3
-
-PRECISION = 10
+from pyems.csxcad import PREC, add_line, construct_box
+from pyems.priority import priorities
 
 
 class Type(Enum):
@@ -95,9 +95,7 @@ def _get_prim_bounds(prim: CSPrimitives) -> np.array:
     for i in range(3):
         lower = np.min([orig_bounds[0][i], orig_bounds[1][i]])
         upper = np.max([orig_bounds[0][i], orig_bounds[1][i]])
-        bounds[i] = np.array(
-            [np.around(lower, PRECISION), np.around(upper, PRECISION)]
-        )
+        bounds[i] = np.array([lower, upper])
     return bounds
 
 
@@ -151,7 +149,7 @@ def _remove_dups(lst: List[float], fixed: List[float] = []) -> List[float]:
             elif np.isclose(elt, last) and elt in fixed:
                 del new_lst[-1]
         last = elt
-        new_lst.append(np.around(elt, PRECISION))
+        new_lst.append(elt)
 
     return new_lst
 
@@ -173,8 +171,8 @@ def _bounds_from_prims(
     for prim in prims:
         prim_bounds = _get_prim_bounds(prim)
         for dim, bounds in enumerate(prim_bounds):
-            dim_bounds[dim].append(np.around(bounds[0], PRECISION))
-            dim_bounds[dim].append(np.around(bounds[1], PRECISION))
+            dim_bounds[dim].append(bounds[0])
+            dim_bounds[dim].append(bounds[1])
 
     for dim, bounds in enumerate(dim_bounds):
         dim_bounds[dim] = sorted(bounds)
@@ -536,8 +534,10 @@ class Mesh:
             if not box.has_zero_dim():
                 pml_prop = self.sim.csx.AddMaterial("PML_" + str(i), epsilon=1)
                 pml_prop.SetColor("#d3d3d3", alpha=200)
-                pml_prop.AddBox(
-                    priority=-1, start=box.start(), stop=box.stop()
+                construct_box(
+                    prop=pml_prop,
+                    box=box,
+                    priority=priorities["x"],
                 )
 
     def pml_boxes(self) -> List[Box3]:
@@ -862,7 +862,7 @@ class Mesh:
             self.mesh.ClearLines(i)
         for dim in range(3):
             for line in self.mesh_lines[dim]:
-                self.mesh.AddLine(dim, line)
+                add_line(grid=self.mesh, dim=dim, val=line)
 
     def _line_below(self, dim: int, pos: float) -> Tuple[int, float]:
         """
@@ -1277,8 +1277,9 @@ class Mesh:
             prim_bounds = _get_prim_bounds(prim)
             for dim in range(3):
                 if np.isclose(prim_bounds[dim][0], prim_bounds[dim][1]):
+                    # TODO is rounding to PREC here necessary?
                     self.add_fixed_line(
-                        dim, np.around(prim_bounds[dim][0], PRECISION)
+                        dim, np.around(prim_bounds[dim][0], PREC)
                     )
 
                 self.fixed_lines[dim].sort()

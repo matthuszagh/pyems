@@ -4,6 +4,7 @@ from pyems.simulation import Simulation
 from pyems.mesh import Mesh
 from pyems.utilities import max_priority
 from pyems.coordinate import Box3, box_overlap
+from pyems.csxcad import construct_box
 
 
 class Feed:
@@ -78,10 +79,8 @@ class Feed:
             if self.weight_func:
                 excitation.SetWeightFunction(self.weight_func)
 
-            self.excitation_box = excitation.AddBox(
-                start=self.box.start(),
-                stop=self.box.stop(),
-                priority=max_priority(),
+            self.excitation_box = construct_box(
+                prop=excitation, box=self.box, priority=max_priority(),
             )
 
         if self.impedance:
@@ -94,8 +93,8 @@ class Feed:
                 C=cval,
                 L=lval,
             )
-            self.res_box = res.AddBox(
-                start=self.box.start(), stop=self.box.stop()
+            self.res_box = construct_box(
+                prop=res, box=self.box, priority=priorities["component"],
             )
 
     def pml_overlap(self) -> bool:

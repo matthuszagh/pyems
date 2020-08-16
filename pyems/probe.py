@@ -4,6 +4,8 @@ from openEMS.ports import UI_data
 from pyems.simulation import Simulation
 from pyems.mesh import Mesh
 from pyems.coordinate import Box3, box_overlap, Axis
+from pyems.csxcad import construct_box
+from pyems.priority import priorities
 
 
 # TODO self.csx_box is messy. Should instead wrap CSPrimitives and
@@ -76,8 +78,8 @@ class Probe:
         if self.mode_function is not None:
             self.csx_probe.SetModeFunction(self.mode_function)
 
-        self.csx_box = self.csx_probe.AddBox(
-            start=self.box.start(), stop=self.box.stop()
+        self.csx_box = construct_box(
+            prop=self.csx_probe, box=self.box, priority=priorities["x"],
         )
 
     def snap_to_mesh(self, mesh) -> None:

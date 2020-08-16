@@ -1,5 +1,7 @@
-from typing import List
+from __future__ import annotations
+from typing import List, Union, Tuple, Optional
 from copy import deepcopy
+from functools import partial
 import numpy as np
 
 
@@ -62,6 +64,13 @@ class Coordinate2:
         else:
             raise ValueError("Invalid index.")
 
+    def __eq__(self, other: Coordinate2) -> bool:
+        """
+        """
+        if self.x == other.x and self.y == other.y:
+            return True
+        return False
+
     def _int_to_coord(self, val) -> float:
         """
         """
@@ -74,8 +83,63 @@ class Coordinate2:
 
     def coordinate_list(self) -> List[float]:
         """
+        Retrieve a list of coordinate values for use by openems, which
+        requires lists of coordinates.
         """
         return [self._x, self._y]
+
+    def transform(self, transform: CSTransform) -> Coordinate2:
+        """
+        Transform the coordinate.  This does not update the coordinate, it
+        simply returns a new transformed coordinate.  If you want to
+        replace the old coordinate you must assign it to the result of
+        this function.
+        """
+        clist = self.coordinate_list()
+        clist.append(0)
+        tclist = transform.Transform(clist)
+        return Coordinate2(tclist[0], tclist[1])
+
+    def round_prec(self, prec: int) -> Coordinate2:
+        """
+        """
+        clist = self.coordinate_list()
+        clist = np.around(clist, prec)
+        return Coordinate2(clist[0], clist[1])
+
+
+def list_center2(coords: List[Coordinate2]) -> Coordinate2:
+    """
+    Compute the center of a list of 2D coordinates.
+    """
+    pts = [coord.coordinate_list() for coord in coords]
+    center = np.average(pts, axis=0)
+    return Coordinate2(center[0], center[1])
+
+
+def line2_angle(coord: Coordinate2, center: Coordinate2) -> float:
+    """
+    Compute the angle between a coordinate and a center coordinate.
+    The 0 angle occurs at the positive x-axis.  That is, when the
+    x-value of ``coord`` is greater than that of ``center`` but they
+    have the same y-value.
+    """
+    xdiff = coord.x - center.x
+    ydiff = coord.y - center.y
+    ang = np.arctan2(ydiff, xdiff)
+    if ang < 0:
+        ang += 2 * np.pi
+
+    return ang
+
+
+def reorder_counterclockwise2(coords: List[Coordinate2]) -> List[Coordinate2]:
+    """
+    """
+    center = list_center2(coords)
+    func = partial(line2_angle, center=center)
+    ordered_coords = sorted(coords, key=func)
+    return ordered_coords
 
 
 class Coordinate3(Coordinate2):
@@ -102,8 +166,28 @@ class Coordinate3(Coordinate2):
 
     def coordinate_list(self) -> List[float]:
         """
+        Retrieve a list of coordinate values for use by openems, which
+        requires lists of coordinates.
         """
         return [self._x, self._y, self._z]
+
+    def transform(self, transform: CSTransform) -> Coordinate3:
+        """
+        Transform the coordinate.  This does not update the coordinate, it
+        simply returns a new transformed coordinate.  If you want to
+        replace the old coordinate you must assign it to the result of
+        this function.
+        """
+        clist = self.coordinate_list()
+        tclist = transform.Transform(clist)
+        return Coordinate3(tclist[0], tclist[1], tclist[2])
+
+    def round_prec(self, prec: int) -> Coordinate3:
+        """
+        """
+        clist = self.coordinate_list()
+        clist = np.around(clist, prec)
+        return Coordinate3(clist[0], clist[1], clist[2])
 
     def __setitem__(self, key, val):
         """
@@ -116,6 +200,13 @@ class Coordinate3(Coordinate2):
             self.z = val
         else:
             raise ValueError("Invalid index.")
+
+    def __eq__(self, other: Coordinate3):
+        """
+        """
+        if self.x == other.x and self.y == other.y and self.z == other.z:
+            return True
+        return False
 
     def _int_to_coord(self, val):
         """
@@ -221,15 +312,55 @@ class Axis:
         return self._int_to_str(self._axis)
 
 
+C2Tuple = Union[Coordinate2, Tuple[float, float]]
+C2TupleOp = Optional[Union[Coordinate2, Tuple[float, float]]]
+C3Tuple = Union[Coordinate3, Tuple[float, float, float]]
+C3TupleOp = Optional[Union[Coordinate3, Tuple[float, float, float]]]
+
+
+def c2_maybe_tuple(coord: C2Tuple) -> Coordinate2:
+    """
+    Convenience function for classes and functions accepting a
+    Coordinate2 parameter.  This removes the burden from the user of
+    always importing and writing Coordinate2, which is tedious when a
+    tuple precisely specifies the intention.
+    """
+    if isinstance(coord, Tuple):
+        if not len(coord) == 2:
+            raise ValueError(
+                "Tuples passed as Coordinate2 must have length 2."
+            )
+        coord = Coordinate2(coord[0], coord[1])
+
+    return coord
+
+
+def c3_maybe_tuple(coord: C3Tuple) -> Coordinate3:
+    """
+    Convenience function for classes and functions accepting a
+    Coordinate3 parameter.  This removes the burden from the user of
+    always importing and writing Coordinate3, which is tedious when a
+    tuple precisely specifies the intention.
+    """
+    if isinstance(coord, Tuple):
+        if not len(coord) == 3:
+            raise ValueError(
+                "Tuples passed as Coordinate3 must have length 3."
+            )
+        coord = Coordinate3(coord[0], coord[1], coord[2])
+
+    return coord
+
+
 class Box2:
     """
     """
 
-    def __init__(self, min_corner: Coordinate2, max_corner: Coordinate2):
+    def __init__(self, min_corner: C2Tuple, max_corner: C2Tuple):
         """
         """
-        self._min_corner = min_corner
-        self._max_corner = max_corner
+        self._min_corner = c2_maybe_tuple(min_corner)
+        self._max_corner = c2_maybe_tuple(max_corner)
 
     @property
     def min_corner(self) -> Coordinate2:
@@ -254,6 +385,20 @@ class Box2:
         List object expected by OpenEMS interface.
         """
         return self.max_corner.coordinate_list()
+
+    def origin_start(self) -> List[float]:
+        """
+        The hypothetical start coordinate for the box if the box were
+        centered at the origin.
+        """
+        return self.start() - self.center().coordinate_list()
+
+    def origin_stop(self) -> List[float]:
+        """
+        The hypothetical stop coordinate for the box if the box were
+        centered at the origin.
+        """
+        return self.stop() - self.center().coordinate_list()
 
     def as_list(self) -> List[List[float]]:
         """
@@ -303,9 +448,8 @@ class Box2:
         """
         Return True if at least 1 dimension of the box has zero size.
         """
-        if (
-            self.max_corner.x - self.min_corner.x == 0
-            or self.max_corner.y - self.min_corner.y == 0
+        if np.isclose(self.max_corner.x - self.min_corner.x, 0) or np.isclose(
+            self.max_corner.y - self.min_corner.y, 0
         ):
             return True
         return False
@@ -315,11 +459,11 @@ class Box3:
     """
     """
 
-    def __init__(self, min_corner: Coordinate3, max_corner: Coordinate3):
+    def __init__(self, min_corner: C3Tuple, max_corner: C3Tuple):
         """
         """
-        self._min_corner = min_corner
-        self._max_corner = max_corner
+        self._min_corner = c3_maybe_tuple(min_corner)
+        self._max_corner = c3_maybe_tuple(max_corner)
 
     def __getitem__(self, key):
         """
@@ -343,9 +487,16 @@ class Box3:
         return self._min_corner
 
     @min_corner.setter
-    def min_corner(self, val: Coordinate3) -> None:
+    def min_corner(
+        self, val: Union[Coordinate3, Tuple[float, float, float]]
+    ) -> None:
         """
         """
+        if isinstance(val, Tuple):
+            if not len(val) == 3:
+                raise ValueError("Tuples passed to Box3 must have length 3.")
+            val = Coordinate3(val[0], val[1], val[2])
+
         self._min_corner = val
 
     @property
@@ -355,9 +506,16 @@ class Box3:
         return self._max_corner
 
     @max_corner.setter
-    def max_corner(self, val: Coordinate3) -> None:
+    def max_corner(
+        self, val: Union[Coordinate3, Tuple[float, float, float]]
+    ) -> None:
         """
         """
+        if isinstance(val, Tuple):
+            if not len(val) == 3:
+                raise ValueError("Tuples passed to Box3 must have length 3.")
+            val = Coordinate3(val[0], val[1], val[2])
+
         self._max_corner = val
 
     def set_increasing(self) -> None:
@@ -431,6 +589,20 @@ class Box3:
         """
         return self.max_corner.coordinate_list()
 
+    def origin_start(self) -> List[float]:
+        """
+        The hypothetical start coordinate for the box if the box were
+        centered at the origin.
+        """
+        return self.start() - self.center().coordinate_list()
+
+    def origin_stop(self) -> List[float]:
+        """
+        The hypothetical stop coordinate for the box if the box were
+        centered at the origin.
+        """
+        return self.stop() - self.center().coordinate_list()
+
     def as_list(self) -> List[List[float]]:
         """
         """
@@ -470,9 +642,9 @@ class Box3:
         Return True if at least 1 dimension of the box has zero size.
         """
         if (
-            self.max_corner.x - self.min_corner.x == 0
-            or self.max_corner.y - self.min_corner.y == 0
-            or self.max_corner.z - self.min_corner.z == 0
+            np.isclose(self.max_corner.x - self.min_corner.x, 0)
+            or np.isclose(self.max_corner.y - self.min_corner.y, 0)
+            or np.isclose(self.max_corner.z - self.min_corner.z, 0)
         ):
             return True
         return False

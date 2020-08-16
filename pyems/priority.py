@@ -1,4 +1,6 @@
 priorities = {
+    # priority doesn't matter
+    "x": -1,
     "substrate": 0,
     "ground": 1,
     "keepout": 2,

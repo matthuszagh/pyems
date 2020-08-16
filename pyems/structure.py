@@ -13,49 +13,33 @@ from CSXCAD.CSProperties import CSProperties
 from CSXCAD.CSPrimitives import CSPrimitives
 from pyems.pcb import PCBProperties
 from pyems.utilities import apply_transform, append_transform
-from pyems.coordinate import Coordinate2, Box2, Coordinate3, Axis, Box3
+from pyems.coordinate import (
+    Coordinate2,
+    Box2,
+    Coordinate3,
+    Axis,
+    Box3,
+    c2_maybe_tuple,
+    c3_maybe_tuple,
+    C2Tuple,
+    C2TupleOp,
+    C3Tuple,
+    C3TupleOp,
+)
 from pyems.simulation import Simulation
 from pyems.port import MicrostripPort, CoaxPort, DifferentialMicrostripPort
 import pyems.calc as calc
 from pyems.priority import priorities
 from pyems.material import Dielectric
-
-
-def construct_circle(
-    prop: CSProperties,
-    center: Coordinate3,
-    radius: float,
-    normal: Axis,
-    priority: int,
-    poly_faces: float = 60,
-    transform: CSTransform = None,
-) -> CSPrimitives:
-    """
-    :param normal: Normal direction to the surface of the circle. 0, 1, or 2,
-    :param poly_faces: A circle is actually drawn as a polygon.  This
-        specifies the number of polygon faces.  Obviously, the greater
-        the number of faces, the more accurate the circle.
-    """
-    prim = prop.AddLinPoly(
-        priority=priority,
-        points=np.multiply(
-            radius,
-            [
-                np.cos(np.linspace(0, 2 * np.pi, poly_faces)),
-                np.sin(np.linspace(0, 2 * np.pi, poly_faces)),
-            ],
-        ),
-        norm_dir=normal.intval(),
-        elevation=0,
-        length=0,
-    )
-    if transform is not None:
-        apply_transform(prim, transform)
-    tr = CSTransform()
-    tr.AddTransform("Translate", center.coordinate_list())
-    apply_transform(prim, tr)
-
-    return prim
+from pyems.csxcad import (
+    fp_warning,
+    construct_box,
+    construct_circle,
+    prim_coords2,
+    construct_polygon,
+    construct_cylinder,
+    construct_cylindrical_shell,
+)
 
 
 def _transformed_coordinate(coord, transform_origin, transform: CSTransform):
@@ -89,159 +73,6 @@ def _transformed_coordinate(coord, transform_origin, transform: CSTransform):
         return Coordinate2(res_coord.x, res_coord.y)
     else:
         return res_coord
-
-
-def _set_box(
-    prop: CSProperties,
-    start: List[float],
-    stop: List[float],
-    position: Coordinate3,
-    transform: CSTransform,
-    priority: int,
-) -> List[Coordinate2]:
-    """
-    Add a box by first constructing the box at the origin, then
-    transforming it and finally translating it for the desired
-    position.
-    """
-    box = prop.AddBox(priority=priority, start=start, stop=stop)
-    if transform is not None:
-        apply_transform(box, transform)
-    translate = CSTransform()
-    translate.AddTransform("Translate", position.coordinate_list())
-    apply_transform(box, translate)
-
-    tr_box = Box2(
-        Coordinate2(start[0], start[1]), Coordinate2(stop[0], stop[1])
-    )
-    corners = tr_box.corners()
-    tr_coordinates = []
-    for corner in corners:
-        corner_list = corner.coordinate_list()
-        corner_list.append(0)
-        if transform is not None:
-            corner_list = transform.Transform(corner_list)
-        corner_list = translate.Transform(corner_list)
-        tr_coordinates.append(Coordinate2(corner_list[0], corner_list[1]))
-
-    return tr_coordinates
-
-
-def _polygon_points(points: List[Coordinate2]) -> List[List[float]]:
-    """
-    Convert a set of coordinates to the format expected by CSXCAD.
-
-    CSXCAD expects a list of 2 lists of positions, where the first
-    inner list describes the x-coordinate positions and the second
-    inner list describes the y-coordinate positions.  Each polygon
-    point is given by the x- and y-coordinate with matching list
-    position.
-    """
-    list1 = []
-    list2 = []
-    for point in points:
-        list1.append(point.x)
-        list2.append(point.y)
-
-    return [list1, list2]
-
-
-def _set_polygon(
-    prop: CSProperties,
-    points: List[Coordinate2],
-    elevation: float,
-    position: Coordinate3,
-    transform: CSTransform,
-    priority: int,
-) -> List[Coordinate2]:
-    """
-    :param points: A list 2D coordinates describing the xy points of
-        the polygon.  The z-coordinate point is given by `elevation`.
-        Select the points relative to the origin such that `transform`
-        will be applied about the origin.  After `transform` is
-        applied, the origin will be translated to `position`.
-
-    :returns: Fully transformed polygon points.
-    """
-    poly = prop.AddPolygon(
-        points=_polygon_points(points),
-        norm_dir=2,
-        elevation=elevation,
-        priority=priority,
-    )
-    translate_vec = position.coordinate_list()
-    translate = CSTransform()
-    translate.AddTransform("Translate", translate_vec)
-    apply_transform(poly, transform)
-    apply_transform(poly, translate)
-
-    transformed_coordinates = []
-    for point in points:
-        point_list = point.coordinate_list()
-        point_list.append(0)
-        if transform is not None:
-            point_list = transform.Transform(point_list)
-        point_list = translate.Transform(point_list)
-        transformed_coordinates.append(
-            Coordinate2(point_list[0], point_list[1])
-        )
-
-    return transformed_coordinates
-
-
-def _set_cylinder(
-    prop: CSProperties,
-    start: Coordinate3,
-    stop: Coordinate3,
-    radius: float,
-    transform: CSTransform,
-    priority: int,
-) -> None:
-    """
-    """
-    start = start.coordinate_list()
-    stop = stop.coordinate_list()
-    position = np.average([start, stop], axis=0)
-    start = np.subtract(start, position)
-    stop = np.subtract(stop, position)
-    cyl = prop.AddCylinder(
-        start=start, stop=stop, radius=radius, priority=priority
-    )
-    apply_transform(cyl, transform)
-
-    translate = CSTransform()
-    translate.AddTransform("Translate", position)
-    apply_transform(cyl, translate)
-
-
-def _set_cylindrical_shell(
-    prop: CSProperties,
-    start: Coordinate3,
-    stop: Coordinate3,
-    inner_radius: float,
-    outer_radius: float,
-    transform: CSTransform,
-    priority: int,
-) -> None:
-    """
-    """
-    start = start.coordinate_list()
-    stop = stop.coordinate_list()
-    position = np.average([start, stop], axis=0)
-    start = np.subtract(start, position)
-    stop = np.subtract(stop, position)
-    cyl = prop.AddCylindricalShell(
-        start=start,
-        stop=stop,
-        radius=np.average([inner_radius, outer_radius]),
-        shell_width=outer_radius - inner_radius,
-        priority=priority,
-    )
-    apply_transform(cyl, transform)
-
-    translate = CSTransform()
-    translate.AddTransform("Translate", position)
-    apply_transform(cyl, translate)
 
 
 def _via_noconnect_layers(
@@ -302,6 +133,8 @@ class Structure(ABC):
     @property
     def polygons(self) -> List:
         """
+        Retrieve ``Structure`` polygons, which are used by the kicad
+        footprint exporter to construct footprints.
         """
         return self._polygons
 
@@ -344,7 +177,7 @@ class PCB(Structure):
         pcb_prop: PCBProperties,
         length: float,
         width: float,
-        position: Coordinate3 = Coordinate3(0, 0, 0),
+        position: C3TupleOp = (0, 0, 0),
         layers: range = None,
         omit_copper: List[int] = [],
     ):
@@ -369,7 +202,7 @@ class PCB(Structure):
         self._pcb_prop = pcb_prop
         self._length = length
         self._width = width
-        self._position = position
+        self._position = c3_maybe_tuple(position)
         if layers is None:
             self._layers = range(self.pcb_prop.num_layers())
         else:
@@ -439,10 +272,10 @@ class PCB(Structure):
         """
         return layer_index % 2 == 0
 
-    def construct(self, position: Coordinate3) -> None:
+    def construct(self, position: C3Tuple) -> None:
         """
         """
-        self._position = position
+        self._position = c3_maybe_tuple(position)
         zpos = 0
         for layer in self.layers:
             zpos = self._construct_layer(zpos, layer)
@@ -472,10 +305,12 @@ class PCB(Structure):
 
         xbounds = self._x_bounds()
         ybounds = self._y_bounds()
-        layer_prop.AddBox(
+        construct_box(
+            prop=layer_prop,
+            box=Box3(
+                (xbounds[0], ybounds[0], zpos), (xbounds[1], ybounds[1], zpos),
+            ),
             priority=priorities["ground"],
-            start=[xbounds[0], ybounds[0], zpos],
-            stop=[xbounds[1], ybounds[1], zpos],
         )
 
         return zpos
@@ -502,10 +337,13 @@ class PCB(Structure):
             ),
             zpos,
         )
-        layer_prop.AddBox(
+        construct_box(
+            prop=layer_prop,
+            box=Box3(
+                (xbounds[0], ybounds[0], zbounds[0]),
+                (xbounds[1], ybounds[1], zbounds[1]),
+            ),
             priority=priorities["substrate"],
-            start=[xbounds[0], ybounds[0], zbounds[0]],
-            stop=[xbounds[1], ybounds[1], zbounds[1]],
         )
 
         return zbounds[0]
@@ -568,7 +406,7 @@ class Via(Structure):
     def __init__(
         self,
         pcb: PCB,
-        position: Coordinate2,
+        position: C2TupleOp,
         drill: float,
         annular_ring: float,
         antipad: float,
@@ -623,7 +461,7 @@ class Via(Structure):
             placed on a PCB, but is provided nonetheless.
         """
         self._pcb = pcb
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._drill = drill
         self._annular_ring = annular_ring
         self._antipad = antipad
@@ -662,10 +500,10 @@ class Via(Structure):
         """
         return self._position
 
-    def construct(self, position: Coordinate2) -> None:
+    def construct(self, position: C2Tuple) -> None:
         """
         """
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._index = self._get_inc_ctr()
         self._construct_via()
         self._construct_pads()
@@ -677,15 +515,15 @@ class Via(Structure):
         start = Coordinate3(
             self.position.x,
             self.position.y,
-            self.pcb.copper_layer_elevation(self.layers[0]),
+            self.pcb.copper_layer_elevation(self.layers[-1]),
         )
         stop = Coordinate3(
             self.position.x,
             self.position.y,
-            self.pcb.copper_layer_elevation(self.layers[-1]),
+            self.pcb.copper_layer_elevation(self.layers[0]),
         )
         via_prop = self.pcb.sim.csx.AddMetal(self._via_name())
-        _set_cylinder(
+        construct_cylinder(
             prop=via_prop,
             start=start,
             stop=stop,
@@ -698,7 +536,7 @@ class Via(Structure):
             air_prop = self.pcb.sim.csx.AddMaterial(
                 self._air_name(), epsilon=1
             )
-            _set_cylinder(
+            construct_cylinder(
                 prop=air_prop,
                 start=start,
                 stop=stop,
@@ -804,7 +642,7 @@ class ViaFence(Structure):
     def __init__(
         self,
         pcb: PCB,
-        position: Coordinate2,
+        position: C2TupleOp,
         length: float,
         spacing: float,
         via: Via = None,
@@ -820,7 +658,7 @@ class ViaFence(Structure):
             "them."
         )
         self._pcb = pcb
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._length = length
         self._spacing = spacing
         self._via = via
@@ -830,11 +668,11 @@ class ViaFence(Structure):
             self.construct(self._position)
 
     def construct(
-        self, position: Coordinate2, transform: CSTransform = None
+        self, position: C2Tuple, transform: CSTransform = None
     ) -> None:
         """
         """
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._transform = append_transform(self._transform, transform)
 
         vias = self._construct_zero()
@@ -874,7 +712,7 @@ class ViaWall(Structure):
     def __init__(
         self,
         pcb: PCB,
-        position: Coordinate2,
+        position: C2TupleOp,
         length: float,
         width: float,
         antipad_width: float = None,
@@ -885,7 +723,7 @@ class ViaWall(Structure):
         """
         """
         self._pcb = pcb
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._length = length
         self._width = width
         if layers is None:
@@ -910,11 +748,11 @@ class ViaWall(Structure):
             self.construct(self._position)
 
     def construct(
-        self, position: Coordinate2, transform: CSTransform = None
+        self, position: C2Tuple, transform: CSTransform = None
     ) -> None:
         """
         """
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._transform = append_transform(self._transform, transform)
         self._index = self._get_inc_ctr()
         self._construct_via_wall()
@@ -924,13 +762,27 @@ class ViaWall(Structure):
         """
         """
         prop = self._pcb.sim.csx.AddMetal(self._via_wall_name())
-        _set_box(
+        construct_box(
             prop=prop,
-            start=self._start(),
-            stop=self._stop(),
-            position=Coordinate3(self._position.x, self._position.y, 0),
+            box=self._box(),
             transform=self._transform,
             priority=priorities["ground"],
+        )
+
+    def _box(self) -> None:
+        """
+        """
+        return Box3(
+            min_corner=(
+                self._position.x - self._length / 2,
+                self._position.y - self._width / 2,
+                self._pcb.copper_layer_elevation(self._layers[-1]),
+            ),
+            max_corner=(
+                self._position.x + self._length / 2,
+                self._position.y + self._width / 2,
+                self._pcb.copper_layer_elevation(self._layers[0]),
+            ),
         )
 
     def _construct_antipads(self) -> None:
@@ -947,42 +799,17 @@ class ViaWall(Structure):
         )
         for layer in self._noconnect_layers:
             zpos = self._pcb.copper_layer_elevation(layer)
-            start = [
-                -self._length / 2,
-                -self._width / 2 - self._antipad_width,
-                zpos,
-            ]
-            stop = [
-                self._length / 2,
-                self._width / 2 + self._antipad_width,
-                zpos,
-            ]
-            _set_box(
+            box = _box()
+            box.min_corner.y -= self._antipad_width
+            box.max_corner.y += self._antipad_width
+            box.min_corner.z = zpos
+            box.max_corner.z = zpos
+            construct_box(
                 prop=prop,
-                start=start,
-                stop=stop,
-                position=Coordinate3(self._position.x, self._position.y, 0),
+                box=box,
                 transform=self._transform,
                 priority=priorities["keepout"],
             )
-
-    def _start(self) -> List[float]:
-        """
-        """
-        return [
-            -self._length / 2,
-            -self._width / 2,
-            self._pcb.copper_layer_elevation(self._layers[0]),
-        ]
-
-    def _stop(self) -> List[float]:
-        """
-        """
-        return [
-            self._length / 2,
-            self._width / 2,
-            self._pcb.copper_layer_elevation(self._layers[-1]),
-        ]
 
     def _via_wall_name(self) -> str:
         """
@@ -1008,7 +835,7 @@ class Microstrip(Structure):
     def __init__(
         self,
         pcb: PCB,
-        position: Coordinate2,
+        position: C2TupleOp,
         length: float,
         width: float,
         propagation_axis: Axis,
@@ -1091,7 +918,7 @@ class Microstrip(Structure):
         :param transform: CSTransform to apply to microstrip.
         """
         self._pcb = pcb
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._length = length
         self._width = width
         self._propagation_axis = propagation_axis
@@ -1142,11 +969,11 @@ class Microstrip(Structure):
         return self._transform
 
     def construct(
-        self, position: Coordinate2, transform: CSTransform = None
+        self, position: C2Tuple, transform: CSTransform = None
     ) -> None:
         """
         """
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._transform = append_transform(self._transform, transform)
         self._index = self._get_inc_ctr()
         if self.port_number is not None:
@@ -1194,23 +1021,21 @@ class Microstrip(Structure):
         prop_axis = self._propagation_axis.axis
         perp_axis = self._trace_perpendicular_axis().axis
 
-        start = [0, 0, trace_z]
-        stop = [0, 0, trace_z]
-        start[prop_axis] = -self._length / 2
-        stop[prop_axis] = self._length / 2
-        start[perp_axis] = -self._width / 2
-        stop[perp_axis] = self._width / 2
+        start = [self.position.x, self.position.y, trace_z]
+        stop = [self.position.x, self.position.y, trace_z]
+        start[prop_axis] -= self._length / 2
+        stop[prop_axis] += self._length / 2
+        start[perp_axis] -= self._width / 2
+        stop[perp_axis] += self._width / 2
 
-        pos = Coordinate3(self.position.x, self.position.y, 0)
-        poly_points = _set_box(
+        box = construct_box(
             prop=trace_prop,
-            start=start,
-            stop=stop,
-            position=pos,
+            box=Box3(tuple(start), tuple(stop)),
             transform=self.transform,
             priority=priorities["trace"],
         )
-        self.polygons.append(poly_points)
+        poly_pts = prim_coords2(box)
+        self.polygons.append(poly_pts)
 
     def _construct_gap(self) -> None:
         """
@@ -1230,12 +1055,12 @@ class Microstrip(Structure):
         prop_axis = self._propagation_axis.axis
         perp_axis = self._trace_perpendicular_axis().axis
 
-        start = [0, 0, trace_z]
-        stop = [0, 0, trace_z]
-        start[prop_axis] = -self._length / 2
-        stop[prop_axis] = self._length / 2
-        start[perp_axis] = -self._width / 2
-        stop[perp_axis] = self._width / 2
+        start = [self.position.x, self.position.y, trace_z]
+        stop = [self.position.x, self.position.y, trace_z]
+        start[prop_axis] -= self._length / 2
+        stop[prop_axis] += self._length / 2
+        start[perp_axis] -= self._width / 2
+        stop[perp_axis] += self._width / 2
 
         if self._gnd_gap[0] is not None:
             start[perp_axis] -= self._gnd_gap[0]
@@ -1246,12 +1071,9 @@ class Microstrip(Structure):
         if self._terminal_gap[1] is not None:
             stop[prop_axis] += self._terminal_gap[1]
 
-        pos = Coordinate3(self.position.x, self.position.y, 0)
-        _set_box(
+        construct_box(
             prop=gap_prop,
-            start=start,
-            stop=stop,
-            position=pos,
+            box=Box3(tuple(start), tuple(stop)),
             transform=self.transform,
             priority=priorities["keepout"],
         )
@@ -1391,7 +1213,7 @@ class DifferentialMicrostrip(Structure):
     def __init__(
         self,
         pcb: PCB,
-        position: Coordinate2,
+        position: C2TupleOp,
         length: float,
         width: float,
         gap: float,
@@ -1413,7 +1235,7 @@ class DifferentialMicrostrip(Structure):
             the inner trace edges.
         """
         self._pcb = pcb
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._length = length
         self._width = width
         self._gap = gap
@@ -1436,11 +1258,11 @@ class DifferentialMicrostrip(Structure):
             self.construct(self._position)
 
     def construct(
-        self, position: Coordinate2, transform: CSTransform = None
+        self, position: C2Tuple, transform: CSTransform = None
     ) -> None:
         """
         """
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._transform = append_transform(self._transform, transform)
         self._index = self._get_inc_ctr()
         if self._port_number is not None:
@@ -1497,29 +1319,27 @@ class DifferentialMicrostrip(Structure):
         prop_axis = self._propagation_axis.axis
         excite_axis = self._excite_axis().axis
         box = Box3(
-            Coordinate3(None, None, elevation),
-            Coordinate3(None, None, elevation),
+            Coordinate3(self._position.x, self._position.y, elevation),
+            Coordinate3(self._position.x, self._position.y, elevation),
         )
 
-        box.min_corner[prop_axis] = -self._length / 2
+        box.min_corner[prop_axis] -= self._length / 2
         if self._terminal_gap[0] is not None:
             box.min_corner[prop_axis] -= self._terminal_gap[0]
-        box.max_corner[prop_axis] = self._length / 2
+        box.max_corner[prop_axis] += self._length / 2
         if self._terminal_gap[1] is not None:
             box.max_corner[prop_axis] += self._terminal_gap[1]
 
-        box.min_corner[excite_axis] = -self._gap / 2
+        box.min_corner[excite_axis] -= self._gap / 2
         if self._gnd_gap[0] is not None:
             box.min_corner[excite_axis] -= self._width + self._gnd_gap[0]
-        box.max_corner[excite_axis] = self._gap / 2
+        box.max_corner[excite_axis] += self._gap / 2
         if self._gnd_gap[1] is not None:
             box.max_corner[excite_axis] += self._width + self._gnd_gap[1]
 
-        _set_box(
+        construct_box(
             prop=gap_prop,
-            start=box.start(),
-            stop=box.stop(),
-            position=Coordinate3(self._position.x, self._position.y, 0),
+            box=box,
             transform=self._transform,
             priority=priorities["keepout"],
         )
@@ -1608,7 +1428,7 @@ class MicrostripCoupler(Structure):
     def __init__(
         self,
         pcb: PCB,
-        position: Coordinate2,
+        position: C2TupleOp,
         trace_layer: int,
         gnd_layer: int,
         trace_width: float,
@@ -1646,7 +1466,7 @@ class MicrostripCoupler(Structure):
         :param transform: Transform to apply to the coupler.
         """
         self._pcb = pcb
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._trace_layer = trace_layer
         self._gnd_layer = gnd_layer
         self._trace_width = trace_width
@@ -1663,11 +1483,11 @@ class MicrostripCoupler(Structure):
             self.construct(self._position)
 
     def construct(
-        self, position: Coordinate2, transform: CSTransform = None
+        self, position: C2Tuple, transform: CSTransform = None
     ) -> None:
         """
         """
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._transform = append_transform(self._transform, transform)
         self._index = self._get_inc_ctr()
 
@@ -1712,11 +1532,20 @@ class MicrostripCoupler(Structure):
             kappa=self._pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
         )
         zpos = self._pcb.copper_layer_elevation(self._trace_layer)
-        _set_box(
+        construct_box(
             prop=prop,
-            start=[-self._length / 2, -self._trace_gap / 2, zpos],
-            stop=[self._length / 2, self._trace_gap / 2, zpos],
-            position=Coordinate3(self._position.x, self._position.y, 0),
+            box=Box3(
+                (
+                    self._position.x - self._length / 2,
+                    self._position.y - self._trace_gap / 2,
+                    zpos,
+                ),
+                (
+                    self._position.x + self._length / 2,
+                    self._position.y + self._trace_gap / 2,
+                    zpos,
+                ),
+            ),
             transform=self._transform,
             priority=priorities["keepout"],
         )
@@ -1727,6 +1556,7 @@ class MicrostripCoupler(Structure):
         miter = Miter(
             pcb=self._pcb,
             position=None,
+            rotation=90,
             pcb_layer=self._trace_layer,
             gnd_layer=self._gnd_layer,
             trace_width=self._trace_width,
@@ -1734,8 +1564,6 @@ class MicrostripCoupler(Structure):
             miter=self._miter,
             transform=self._transform,
         )
-        tr = CSTransform()
-        tr.AddTransform("RotateAxis", "z", 90)
         miter.construct(
             position=Coordinate2(
                 self._position.x
@@ -1747,7 +1575,6 @@ class MicrostripCoupler(Structure):
                 - miter.length()
                 + self._trace_width / 2,
             ),
-            transform=tr,
         )
         self._polygons += miter.polygons
 
@@ -1862,11 +1689,12 @@ class Taper(Structure):
     def __init__(
         self,
         pcb: PCB,
-        position: Coordinate2,
+        position: C2TupleOp,
         pcb_layer: int,
         width1: float,
         width2: float,
         length: float,
+        rotation: float = 0,
         gap: float = None,
         transform: CSTransform = None,
     ):
@@ -1886,7 +1714,10 @@ class Taper(Structure):
         :param transform: Transform applied to taper.
         """
         self._pcb = pcb
-        self._position = position
+        self._position = c2_maybe_tuple(position)
+        tr = CSTransform()
+        tr.AddTransform("Rotate", "z", rotation)
+        self._rotation = rotation
         self._pcb_layer = pcb_layer
         self._width1 = width1
         self._width2 = width2
@@ -1934,12 +1765,12 @@ class Taper(Structure):
         return self._width2
 
     def construct(
-        self, position: Coordinate2, transform: CSTransform = None
+        self, position: C2Tuple, transform: CSTransform = None
     ) -> None:
         """
         """
         self._transform = append_transform(self.transform, transform)
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._construct_taper()
         self._construct_gap()
 
@@ -1953,13 +1784,13 @@ class Taper(Structure):
         )
         pts = self._trapezoid_points(self.width1, self.width2)
         zpos = self._taper_elevation()
-        _set_polygon(
+        construct_polygon(
             prop=taper_prop,
             points=pts,
+            normal=Axis("z"),
             elevation=zpos,
-            position=Coordinate3(self.position.x, self.position.y, 0),
-            transform=self.transform,
             priority=priorities["trace"],
+            transform=self.transform,
         )
 
     def _construct_gap(self) -> None:
@@ -1978,13 +1809,13 @@ class Taper(Structure):
             self.width1 + (2 * self._gap), self.width2 + (2 * self._gap)
         )
         zpos = self._taper_elevation()
-        _set_polygon(
+        construct_polygon(
             prop=gap_prop,
             points=pts,
+            normal=Axis("z"),
             elevation=zpos,
-            position=Coordinate3(self.position.x, self.position.y, 0),
-            transform=self.transform,
             priority=priorities["keepout"],
+            transform=self.transform,
         )
 
     def _trapezoid_points(
@@ -1994,19 +1825,22 @@ class Taper(Structure):
         Returns 4 trapezoid corners in the order bottom left, top
         left, bottom right, top right.
         """
-        xmin = -self._length / 2
-        xmax = self._length / 2
-        yl1 = -width1 / 2
-        yl2 = width1 / 2
-        yr1 = -width2 / 2
-        yr2 = width2 / 2
+        xmin = self.position.x - self._length / 2
+        xmax = self.position.x + self._length / 2
+        yl1 = self.position.y - width1 / 2
+        yl2 = self.position.y + width1 / 2
+        yr1 = self.position.y - width2 / 2
+        yr2 = self.position.y + width2 / 2
 
-        return [
+        coords = [
             Coordinate2(xmin, yl1),
             Coordinate2(xmin, yl2),
             Coordinate2(xmax, yr2),
             Coordinate2(xmax, yr1),
         ]
+        coords = [coord.transform(self._rotation) for coord in coords]
+
+        return coords
 
     def _taper_name(self) -> str:
         """
@@ -2027,11 +1861,42 @@ class Taper(Structure):
 class Miter(Structure):
     """
     Microstrip mitered bend.  Currently only supports 90degree bends.
-    By default, this will connect to the right side of a microstrip
-    travelling in the +x-direction and the top of a microstrip
-    travelling in the +y-direction.  Transforms can be used for any
-    other configuration.  Transforms will be applied relative to the
-    `position` argument.
+
+    The default orientation is:
+
+                          *
+                          * *
+                          *   *
+                       1  *     *
+                          *       *
+                          *******   *
+                                *     *
+                                *       *
+                                * * * * * *
+                                     2
+
+    The parameter ``position`` denotes position 1 in the diagram,
+    which is the middle of the leftmost edge.  The miter can undergo
+    any arbitrary rotation about its normal axis without suffering the
+    floating point precision affects of general transformations in
+    OpenEMS (see the documentation).  A positive rotation indicates a
+    counterclockwise direction, so for instance, a +90 degree rotation
+    would produce (with position 1 unmoved):
+
+                                         *
+                                       * *
+                                     *   *
+                                   *     *  2
+                                 *       *
+                               *   *******
+                             *     *
+                           *       *
+                         * * * * * *
+                              1
+
+    Arbitrary transformations can also be used, but since these cannot
+    guarantee mesh alignment, they should only be used in cases where
+    simple normal-direction rotation is insufficient.
     """
 
     unique_index = 0
@@ -2039,11 +1904,12 @@ class Miter(Structure):
     def __init__(
         self,
         pcb: PCB,
-        position: Coordinate2,
+        position: C2TupleOp,
         pcb_layer: int,
         gnd_layer: int,
         trace_width: float,
         gap: float,
+        rotation: float = 0,
         miter: float = None,
         transform: CSTransform = None,
     ):
@@ -2063,10 +1929,17 @@ class Miter(Structure):
         :param gap: Distance between taper and surrounding coplanar
             ground plane.  If gap is set to None, no gap is used.
             Ensure coplanar copper pour is removed if this is used.
-        :param transform: Transform applied to miter.
+        :param rotation: Rotation about the normal axis.  See diagram
+            and associated description in the class docstring.
+        :param transform: Transform applied to miter.  These, like
+            all typical transforms, are applied about the actual
+            center of the miter, not position 1.
         """
         self._pcb = pcb
-        self._position = position
+        self._position = c2_maybe_tuple(position)
+        tr = CSTransform()
+        tr.AddTransform("RotateAxis", "z", rotation)
+        self._rotation = tr
         self._pcb_layer = pcb_layer
         self._gnd_layer = gnd_layer
         self._trace_width = trace_width
@@ -2117,22 +1990,26 @@ class Miter(Structure):
 
     def end_point(self) -> Coordinate2:
         """
-        Coordinate of the end of the miter.  Analogous to
-        `self.position` but for the end of the miter.
+        Coordinate of the end of the miter.  This is position 2 in the
+        class docstring diagram.
         """
         inset_len = self._trace_width - self.overlap_length()
-        xpos = self.position.x + self._trace_width / 2 + inset_len
-        ypos = self.position.y - (self._trace_width / 2) - inset_len
+        xpos = self._trace_width / 2 + inset_len
+        ypos = -self._trace_width / 2 - inset_len
+        coord = Coordinate2(xpos, ypos)
+        coord = coord.transform(self._rotation)
+        coord.x += self.position.x
+        coord.y += self.position.y
 
-        return Coordinate2(xpos, ypos)
+        return coord
 
     def construct(
-        self, position: Coordinate2, transform: CSTransform = None
+        self, position: C2Tuple, transform: CSTransform = None
     ) -> None:
         """
         """
         self._transform = append_transform(self._transform, transform)
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._construct_trace()
         self._construct_gap()
 
@@ -2144,15 +2021,15 @@ class Miter(Structure):
             conductivity=self.pcb.pcb_prop.metal_conductivity(),
             thickness=self.pcb.pcb_prop.copper_thickness(self._pcb_layer),
         )
-        pos = Coordinate3(self.position.x, self.position.y, 0)
-        poly_points = _set_polygon(
+        poly = construct_polygon(
             prop=prop,
             points=self._trace_points(),
             elevation=self.pcb.copper_layer_elevation(self._pcb_layer),
-            position=pos,
-            transform=self.transform,
+            normal=Axis("z"),
             priority=priorities["trace"],
+            transform=self.transform,
         )
+        poly_points = prim_coords2(poly)
         self.polygons.append(poly_points)
 
     def _construct_gap(self) -> None:
@@ -2167,14 +2044,13 @@ class Miter(Structure):
             epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
             kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
         )
-        pos = Coordinate3(self.position.x, self.position.y, 0)
-        _set_polygon(
+        construct_polygon(
             prop=prop,
             points=self._gap_points(),
             elevation=self.pcb.copper_layer_elevation(self._pcb_layer),
-            position=pos,
-            transform=self.transform,
+            normal=Axis("z"),
             priority=priorities["keepout"],
+            transform=self.transform,
         )
 
     def length(self) -> float:
@@ -2185,27 +2061,21 @@ class Miter(Structure):
 
     def _trace_points(self) -> List[Coordinate2]:
         """
-        List of miter x and y-coordinates such that self.position is
-        taken as the origin.  See _set_polygon for how these points
-        are used.
+        List of miter x and y-coordinates.
         """
         inset_len = self.inset_length()
         pts = []
         # 1st point from top left, proceeding counterclockwise
-        pts.append(Coordinate2(0, self._trace_width / 2))
-        # 2
-        pts.append(Coordinate2(0, -self._trace_width / 2))
-        # 3
-        pts.append(Coordinate2(inset_len, -self._trace_width / 2))
-        # 4
-        pts.append(Coordinate2(inset_len, -self._trace_width / 2 - inset_len))
-        # 5
-        pts.append(
-            Coordinate2(
-                inset_len + self._trace_width,
-                -self._trace_width / 2 - inset_len,
-            )
-        )
+        pts.append(Coordinate2(0, 0 + self._trace_width / 2))
+        pts.append(Coordinate2(pts[-1].x, pts[-1].y - self._trace_width))
+        pts.append(Coordinate2(pts[-1].x + inset_len, pts[-1].y))
+        pts.append(Coordinate2(pts[-1].x, pts[-1].y - inset_len))
+        pts.append(Coordinate2(pts[-1].x + self._trace_width, pts[-1].y))
+
+        pts = [pt.transform(self._rotation) for pt in pts]
+        for pt in pts:
+            pt.x += self.position.x
+            pt.y += self.position.y
 
         return pts
 
@@ -2213,25 +2083,19 @@ class Miter(Structure):
         """
         """
         inset_len = self.inset_length()
-        pts = []
-        # 1
-        pts.append(0, self._trace_width / 2 + self._gap)
-        # 2
-        pts.append(0, -self._trace_width / 2 - inset_len)
-        # 3
-        pts.append(
-            self._trace_width + inset_len + self._gap,
-            -self._trace_width / 2 - inset_len,
+        gap_points = [deepcopy(coord) for coord in self._trace_points()]
+        gap_points[0].y += self._gap
+        gap_points[1].y -= inset_len
+        gap_points[2].x += self._trace_width + self._gap
+        gap_points[2].y -= inset_len
+        gap_points[3].x += self._gap
+        gap_points[3].y += self._gap / np.sqrt(2)
+        gap_points[4].x += (
+            -inset_len - self._trace_width + self._gap / np.sqrt(2)
         )
-        # 4
-        pts.append(
-            self._trace_width + inset_len + self._gap,
-            -self._trace_width / 2 - inset_len + (self._gap / np.sqrt(2)),
-        )
-        # 5
-        pts.append(self._gap / np.sqrt(2), self._trace_width / 2 + self._gap)
+        gap_points[4].y += self._trace_width + inset_len + self._gap
 
-        return pts
+        return gap_points
 
     def overlap_length(self) -> float:
         """
@@ -2331,7 +2195,7 @@ class SMDPassive(Structure):
     def __init__(
         self,
         pcb: PCB,
-        position: Coordinate2,
+        position: C2TupleOp,
         axis: Axis,
         dimensions: SMDPassiveDimensions,
         pad_width: float,
@@ -2370,7 +2234,7 @@ class SMDPassive(Structure):
             proportion of length between the ends of the pads.
         """
         self._pcb = pcb
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         if axis.axis == 2:
             raise ValueError("Axis must either point in x or y-directions.")
         self._axis = axis
@@ -2415,10 +2279,10 @@ class SMDPassive(Structure):
         """
         return self._pcb
 
-    def construct(self, position: Coordinate2) -> None:
+    def construct(self, position: C2Tuple) -> None:
         """
         """
-        self._position = position
+        self._position = c2_maybe_tuple(position)
         self._construct_pads()
         self._construct_smd()
         self._construct_gap()
@@ -2439,17 +2303,15 @@ class SMDPassive(Structure):
             -self.dimensions.length / 2,
             self.dimensions.length / 2,
         ]:
-            start = [None, None, zpos]
-            stop = [None, None, zpos]
-            start[prop_axis] = pad_middle - self._pad_length / 2
-            stop[prop_axis] = pad_middle + self._pad_length / 2
-            start[orth_axis] = -self._pad_width / 2
-            stop[orth_axis] = self._pad_width / 2
-            _set_box(
+            start = [self.position.x, self.position.y, zpos]
+            stop = [self.position.x, self.position.y, zpos]
+            start[prop_axis] += pad_middle - self._pad_length / 2
+            stop[prop_axis] += pad_middle + self._pad_length / 2
+            start[orth_axis] += -self._pad_width / 2
+            stop[orth_axis] += self._pad_width / 2
+            construct_box(
                 prop=pad_prop,
-                start=start,
-                stop=stop,
-                position=Coordinate3(self.position.x, self.position.y, 0),
+                box=Box3(tuple(start), tuple(stop)),
                 transform=None,
                 priority=priorities["trace"],
             )
@@ -2469,17 +2331,19 @@ class SMDPassive(Structure):
 
         prop_axis = self._axis.axis
         orth_axis = self._orthogonal_axis().axis
-        start = [None, None, self._pad_elevation()]
-        stop = [None, None, self._pad_elevation() + self.dimensions.height]
-        start[prop_axis] = -self.dimensions.length / 2
-        stop[prop_axis] = self.dimensions.length / 2
-        start[orth_axis] = -self.dimensions.width / 2
-        stop[orth_axis] = self.dimensions.width / 2
-        _set_box(
+        start = [self.position.x, self.position.y, self._pad_elevation()]
+        stop = [
+            self.position.x,
+            self.position.y,
+            self._pad_elevation() + self.dimensions.height,
+        ]
+        start[prop_axis] -= self.dimensions.length / 2
+        stop[prop_axis] += self.dimensions.length / 2
+        start[orth_axis] -= self.dimensions.width / 2
+        stop[orth_axis] += self.dimensions.width / 2
+        construct_box(
             prop=smd_prop,
-            start=start,
-            stop=stop,
-            position=Coordinate3(self.position.x, self.position.y, 0),
+            box=Box3(tuple(start), tuple(stop)),
             transform=None,
             priority=priorities["component"],
         )
@@ -2493,14 +2357,16 @@ class SMDPassive(Structure):
         prop_axis = self._axis.axis
         orth_axis = self._orthogonal_axis().axis
         zpos = self._pad_elevation()
-        start = [None, None, zpos]
-        stop = [None, None, zpos]
-        start[prop_axis] = -(self.dimensions.length / 2) - (
+        start = [self.position.x, self.position.y, zpos]
+        stop = [self.position.x, self.position.y, zpos]
+        start[prop_axis] += -(self.dimensions.length / 2) - (
             self._pad_length / 2
         )
-        stop[prop_axis] = (self.dimensions.length / 2) + (self._pad_length / 2)
-        start[orth_axis] = -(self._pad_width / 2) - self._gap
-        stop[orth_axis] = (self._pad_width / 2) + self._gap
+        stop[prop_axis] += (self.dimensions.length / 2) + (
+            self._pad_length / 2
+        )
+        start[orth_axis] += -(self._pad_width / 2) - self._gap
+        stop[orth_axis] += (self._pad_width / 2) + self._gap
 
         ref_freq = self.pcb.sim.reference_frequency
         gap_prop = self.pcb.sim.csx.AddMaterial(
@@ -2508,11 +2374,9 @@ class SMDPassive(Structure):
             epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
             kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
         )
-        _set_box(
+        construct_box(
             prop=gap_prop,
-            start=start,
-            stop=stop,
-            position=Coordinate3(self.position.x, self.position.y, 0),
+            box=Box3(tuple(start), tuple(stop)),
             transform=None,
             priority=priorities["keepout"],
         )
@@ -2526,12 +2390,12 @@ class SMDPassive(Structure):
         prop_axis = self._axis.axis
         orth_axis = self._orthogonal_axis().axis
         zpos = self._gnd_elevation()
-        start = [None, None, zpos]
-        stop = [None, None, zpos]
-        start[prop_axis] = -(self._gnd_cutout_length / 2)
-        stop[prop_axis] = self._gnd_cutout_length / 2
-        start[orth_axis] = -(self._gnd_cutout_width / 2)
-        stop[orth_axis] = self._gnd_cutout_width / 2
+        start = [self.position.x, self.position.y, zpos]
+        stop = [self.position.x, self.position.y, zpos]
+        start[prop_axis] -= self._gnd_cutout_length / 2
+        stop[prop_axis] += self._gnd_cutout_length / 2
+        start[orth_axis] -= self._gnd_cutout_width / 2
+        stop[orth_axis] += self._gnd_cutout_width / 2
 
         ref_freq = self.pcb.sim.reference_frequency
         cutout_prop = self.pcb.sim.csx.AddMaterial(
@@ -2539,11 +2403,9 @@ class SMDPassive(Structure):
             epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
             kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
         )
-        _set_box(
+        construct_box(
             prop=cutout_prop,
-            start=start,
-            stop=stop,
-            position=Coordinate3(self.position.x, self.position.y, 0),
+            box=Box3(tuple(start), tuple(stop)),
             transform=None,
             priority=priorities["keepout"],
         )
@@ -2664,7 +2526,7 @@ class Coax(Structure):
     def __init__(
         self,
         sim: Simulation,
-        position: Coordinate3,
+        position: C3TupleOp,
         length: float,
         radius: float,
         core_radius: float,
@@ -2711,7 +2573,7 @@ class Coax(Structure):
         :param transform: CSTransform to apply to coaxial cable.
         """
         super().__init__(sim=sim)
-        self._position = position
+        self._position = c3_maybe_tuple(position)
         self._length = length
         self._radius = radius
         self._core_radius = core_radius
@@ -2733,12 +2595,12 @@ class Coax(Structure):
             self.construct(self._position)
 
     def construct(
-        self, position: Coordinate3, transform: CSTransform = None
+        self, position: C3Tuple, transform: CSTransform = None
     ) -> None:
         """
         """
         self._index = self._get_inc_ctr()
-        self._position = position
+        self._position = c3_maybe_tuple(position)
         self._transform = append_transform(self._transform, transform)
         self._construct_core()
         self._construct_dielectric()
@@ -2784,7 +2646,7 @@ class Coax(Structure):
         """
         """
         core_prop = self.sim.csx.AddMetal(self._core_name())
-        _set_cylinder(
+        construct_cylinder(
             prop=core_prop,
             start=self._start(),
             stop=self._stop(),
@@ -2802,7 +2664,7 @@ class Coax(Structure):
             epsilon=self._dielectric.epsr_at_freq(ref_freq),
             kappa=self._dielectric.kappa_at_freq(ref_freq),
         )
-        _set_cylindrical_shell(
+        construct_cylindrical_shell(
             prop=dielectric_prop,
             start=self._start(),
             stop=self._stop(),
@@ -2816,7 +2678,7 @@ class Coax(Structure):
         """
         """
         shield_prop = self.sim.csx.AddMetal(self._shield_name())
-        _set_cylindrical_shell(
+        construct_cylindrical_shell(
             prop=shield_prop,
             start=self._start(),
             stop=self._stop(),

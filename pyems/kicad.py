@@ -1,6 +1,6 @@
 from typing import List
 from pyems.structure import Structure
-from pyems.coordinate import Coordinate2
+from pyems.coordinate import Coordinate2, reorder_counterclockwise2
 
 
 def module_header(name: str) -> str:
@@ -12,6 +12,7 @@ def module_header(name: str) -> str:
 def polygon(poly: List[Coordinate2]) -> str:
     """
     """
+    poly = reorder_counterclockwise2(poly)
     poly_str = "  (fp_poly (pts "
     for coord in poly:
         poly_str += (

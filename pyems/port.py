@@ -51,6 +51,7 @@ from pyems.calc import wavenumber
 from pyems.feed import Feed
 from pyems.priority import priorities
 from pyems.const import Z0
+from pyems.csxcad import construct_box
 
 
 class Port(ABC):
@@ -482,8 +483,10 @@ class MicrostripPort(Port):
             thickness=self.thickness,
         )
         box = self._trace_box()
-        trace_prop.AddBox(
-            priority=priorities["trace"], start=box.start(), stop=box.stop(),
+        construct_box(
+            prop=trace_prop,
+            box=box,
+            priority=priorities["trace"],
         )
 
     def _trace_box(self) -> Box3:
@@ -769,10 +772,10 @@ class DifferentialMicrostripPort(Port):
             thickness=self._thickness,
         )
         for box in self._trace_boxes():
-            trace_prop.AddBox(
+            construct_box(
+                prop=trace_prop,
+                box=box,
                 priority=priorities["trace"],
-                start=box.start(),
-                stop=box.stop(),
             )
 
     def _trace_boxes(self) -> Tuple[Box3, Box3]:
@@ -1379,7 +1382,11 @@ class RectWaveguidePort(Port):
             const_dim_idx=0,
             thickness=thickness,
         )
-        shell_prop.AddBox(start=back_face.start(), stop=back_face.stop())
+        construct_box(
+            prop=shell_prop,
+            box=back_face,
+            priority=priorities["trace"],
+        )
         dims = list(range(3))
         del dims[self.propagation_axis().intval()]
         for dim in dims:
@@ -1387,7 +1394,11 @@ class RectWaveguidePort(Port):
                 face = self._shell_face_box(
                     const_dim=dim, const_dim_idx=i, thickness=thickness
                 )
-                shell_prop.AddBox(start=face.start(), stop=face.stop())
+                construct_box(
+                    prop=shell_prop,
+                    box=face,
+                    priority=priorities["trace"],
+                )
 
     def _shell_face_box(
         self, const_dim: int, const_dim_idx: int, thickness: float,

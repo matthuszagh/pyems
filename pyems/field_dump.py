@@ -4,6 +4,8 @@ import os
 import subprocess
 from pyems.simulation import Simulation
 from pyems.coordinate import Box3
+from pyems.csxcad import construct_box
+from pyems.priority import priorities
 
 
 class DumpType(Enum):
@@ -67,7 +69,9 @@ class FieldDump:
             dump_type=self._dump_type.value,
             file_type=0,
         )
-        dump.AddBox(start=self.box.start(), stop=self.box.stop())
+        construct_box(
+            prop=dump, box=self.box, priority=priorities["x"],
+        )
         self._sim.add_field_dump(self)
 
     @property
