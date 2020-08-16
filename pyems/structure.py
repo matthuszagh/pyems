@@ -39,6 +39,10 @@ from pyems.csxcad import (
     construct_polygon,
     construct_cylinder,
     construct_cylindrical_shell,
+    add_material,
+    add_metal,
+    add_conducting_sheet,
+    colors,
 )
 
 
@@ -295,8 +299,9 @@ class PCB(Structure):
         if copper_index in self._omit_copper:
             return zpos
 
-        layer_prop = self.sim.csx.AddConductingSheet(
-            self._layer_name(layer_index),
+        layer_prop = add_conducting_sheet(
+            csx=self.sim.csx,
+            name=self._layer_name(layer_index),
             conductivity=self.pcb_prop.metal_conductivity(),
             thickness=self.pcb_prop.copper_thickness(
                 self._copper_index(layer_index)
@@ -321,10 +326,12 @@ class PCB(Structure):
         """
         """
         ref_freq = self.sim.reference_frequency
-        layer_prop = self.sim.csx.AddMaterial(
-            self._layer_name(layer_index),
+        layer_prop = add_material(
+            csx=self.sim.csx,
+            name=self._layer_name(layer_index),
             epsilon=self.pcb_prop.substrate.epsr_at_freq(ref_freq),
             kappa=self.pcb_prop.substrate.kappa_at_freq(ref_freq),
+            color=colors["soldermask"],
         )
         xbounds = self._x_bounds()
         ybounds = self._y_bounds()
@@ -522,7 +529,7 @@ class Via(Structure):
             self.position.y,
             self.pcb.copper_layer_elevation(self.layers[0]),
         )
-        via_prop = self.pcb.sim.csx.AddMetal(self._via_name())
+        via_prop = add_metal(csx=self.pcb.sim.csx, name=self._via_name())
         construct_cylinder(
             prop=via_prop,
             start=start,
@@ -533,8 +540,8 @@ class Via(Structure):
         )
 
         if not self._fill:
-            air_prop = self.pcb.sim.csx.AddMaterial(
-                self._air_name(), epsilon=1
+            air_prop = add_material(
+                csx=self.pcb.sim.csx, name=self._air_name(), epsilon=1
             )
             construct_cylinder(
                 prop=air_prop,
@@ -550,8 +557,9 @@ class Via(Structure):
         """
         for layer in self.layers:
             zpos = self.pcb.copper_layer_elevation(layer)
-            pad_prop = self.pcb.sim.csx.AddConductingSheet(
-                self._pad_name(layer),
+            pad_prop = add_conducting_sheet(
+                csx=self.pcb.sim.csx,
+                name=self._pad_name(layer),
                 conductivity=self.pcb.pcb_prop.metal_conductivity(),
                 thickness=self.pcb.pcb_prop.copper_thickness(layer),
             )
@@ -569,14 +577,16 @@ class Via(Structure):
         """
         for layer in self._noconnect_layers:
             zpos = self.pcb.copper_layer_elevation(layer)
-            antipad_prop = self.pcb.sim.csx.AddMaterial(
-                self._antipad_name(layer),
+            antipad_prop = add_material(
+                csx=self.pcb.sim.csx,
+                name=self._antipad_name(layer),
                 epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(
                     self.pcb.sim.reference_frequency
                 ),
                 kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(
                     self.pcb.sim.reference_frequency
                 ),
+                color=colors["soldermask"],
             )
             antipad_prim = construct_circle(
                 prop=antipad_prop,
@@ -761,7 +771,7 @@ class ViaWall(Structure):
     def _construct_via_wall(self) -> None:
         """
         """
-        prop = self._pcb.sim.csx.AddMetal(self._via_wall_name())
+        prop = add_metal(csx=self._pcb.sim.csx, name=self._via_wall_name())
         construct_box(
             prop=prop,
             box=self._box(),
@@ -792,10 +802,12 @@ class ViaWall(Structure):
             return
 
         ref_freq = self._pcb.sim.reference_frequency
-        prop = self._pcb.sim.csx.AddMaterial(
-            self._antipad_name(),
+        prop = add_material(
+            csx=self._pcb.sim.csx,
+            name=self._antipad_name(),
             epsilon=self._pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
             kappa=self._pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
+            color=colors["soldermask"],
         )
         for layer in self._noconnect_layers:
             zpos = self._pcb.copper_layer_elevation(layer)
@@ -1012,8 +1024,9 @@ class Microstrip(Structure):
     def _construct_trace(self) -> None:
         """
         """
-        trace_prop = self.pcb.sim.csx.AddConductingSheet(
-            self._microstrip_name(),
+        trace_prop = add_conducting_sheet(
+            csx=self.pcb.sim.csx,
+            name=self._microstrip_name(),
             conductivity=self.pcb.pcb_prop.metal_conductivity(),
             thickness=self.pcb.pcb_prop.copper_thickness(self._trace_layer),
         )
@@ -1046,10 +1059,12 @@ class Microstrip(Structure):
             return
 
         freq = self.pcb.sim.reference_frequency
-        gap_prop = self.pcb.sim.csx.AddMaterial(
-            self._gap_name(),
+        gap_prop = add_material(
+            csx=self.pcb.sim.csx,
+            name=self._gap_name(),
             epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(freq),
             kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(freq),
+            color=colors["soldermask"],
         )
         trace_z = self._trace_z()
         prop_axis = self._propagation_axis.axis
@@ -1310,10 +1325,12 @@ class DifferentialMicrostrip(Structure):
             return
 
         freq = self._pcb.sim.reference_frequency
-        gap_prop = self._pcb.sim.csx.AddMaterial(
-            self._gap_name(),
+        gap_prop = add_material(
+            csx=self._pcb.sim.csx,
+            name=self._gap_name(),
             epsilon=self._pcb.pcb_prop.substrate.epsr_at_freq(freq),
             kappa=self._pcb.pcb_prop.substrate.kappa_at_freq(freq),
+            color=colors["soldermask"],
         )
         elevation = self._trace_elevation()
         prop_axis = self._propagation_axis.axis
@@ -1526,10 +1543,12 @@ class MicrostripCoupler(Structure):
             return
 
         ref_freq = self._pcb.sim.reference_frequency
-        prop = self._pcb.sim.csx.AddMaterial(
-            self._gap_name(),
+        prop = add_material(
+            csx=self._pcb.sim.csx,
+            name=self._gap_name(),
             epsilon=self._pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
             kappa=self._pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
+            color=colors["soldermask"],
         )
         zpos = self._pcb.copper_layer_elevation(self._trace_layer)
         construct_box(
@@ -1777,8 +1796,9 @@ class Taper(Structure):
     def _construct_taper(self) -> None:
         """
         """
-        taper_prop = self.pcb.sim.csx.AddConductingSheet(
-            self._taper_name(),
+        taper_prop = add_conducting_sheet(
+            csx=self.pcb.sim.csx,
+            name=self._taper_name(),
             conductivity=self.pcb.pcb_prop.metal_conductivity(),
             thickness=self.pcb.pcb_prop.copper_thickness(self._pcb_layer),
         )
@@ -1800,10 +1820,12 @@ class Taper(Structure):
             return
 
         ref_freq = self.pcb.sim.reference_frequency
-        gap_prop = self.pcb.sim.csx.AddMaterial(
-            self._gap_name(),
+        gap_prop = add_material(
+            csx=self.pcb.sim.csx,
+            name=self._gap_name(),
             epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
             kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
+            color=colors["soldermask"],
         )
         pts = self._trapezoid_points(
             self.width1 + (2 * self._gap), self.width2 + (2 * self._gap)
@@ -2016,8 +2038,9 @@ class Miter(Structure):
     def _construct_trace(self) -> None:
         """
         """
-        prop = self.pcb.sim.csx.AddConductingSheet(
-            self._trace_name(),
+        prop = add_conducting_sheet(
+            csx=self.pcb.sim.csx,
+            name=self._trace_name(),
             conductivity=self.pcb.pcb_prop.metal_conductivity(),
             thickness=self.pcb.pcb_prop.copper_thickness(self._pcb_layer),
         )
@@ -2039,10 +2062,12 @@ class Miter(Structure):
             return
 
         ref_freq = self.pcb.sim.reference_frequency
-        prop = self.pcb.sim.csx.AddMaterial(
-            self._gap_name(),
+        gap_prop = add_material(
+            csx=self.pcb.sim.csx,
+            name=self._gap_name(),
             epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
             kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
+            color=colors["soldermask"],
         )
         construct_polygon(
             prop=prop,
@@ -2296,6 +2321,12 @@ class SMDPassive(Structure):
             conductivity=self.pcb.pcb_prop.metal_conductivity(),
             thickness=self.pcb.pcb_prop.copper_thickness(self._pcb_layer),
         )
+        pad_prop = add_conducting_sheet(
+            csx=self.pcb.sim.csx,
+            name=self._pad_name(),
+            conductivity=self.pcb.pcb_prop.metal_conductivity(),
+            thickness=self.pcb.pcb_prop.copper_thickness(self._pcb_layer),
+        )
         prop_axis = self._axis.axis
         orth_axis = self._orthogonal_axis().axis
         zpos = self._pad_elevation()
@@ -2369,10 +2400,12 @@ class SMDPassive(Structure):
         stop[orth_axis] += (self._pad_width / 2) + self._gap
 
         ref_freq = self.pcb.sim.reference_frequency
-        gap_prop = self.pcb.sim.csx.AddMaterial(
-            self._gap_name(),
+        gap_prop = add_material(
+            csx=self.pcb.sim.csx,
+            name=self._gap_name(),
             epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
             kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
+            color=colors["soldermask"],
         )
         construct_box(
             prop=gap_prop,
@@ -2398,10 +2431,12 @@ class SMDPassive(Structure):
         stop[orth_axis] += self._gnd_cutout_width / 2
 
         ref_freq = self.pcb.sim.reference_frequency
-        cutout_prop = self.pcb.sim.csx.AddMaterial(
-            self._cutout_name(),
+        cutout_prop = add_material(
+            csx=self.pcb.sim.csx,
+            name=self._cutout_name(),
             epsilon=self.pcb.pcb_prop.substrate.epsr_at_freq(ref_freq),
             kappa=self.pcb.pcb_prop.substrate.kappa_at_freq(ref_freq),
+            color=colors["soldermask"],
         )
         construct_box(
             prop=cutout_prop,
@@ -2645,7 +2680,7 @@ class Coax(Structure):
     def _construct_nonport_core(self) -> None:
         """
         """
-        core_prop = self.sim.csx.AddMetal(self._core_name())
+        core_prop = add_metal(csx=self.sim.csx, name=self._core_name())
         construct_cylinder(
             prop=core_prop,
             start=self._start(),
@@ -2659,10 +2694,13 @@ class Coax(Structure):
         """
         """
         ref_freq = self.sim.reference_frequency
-        dielectric_prop = self.sim.csx.AddMaterial(
-            self._dielectric_name(),
+        dielectric_prop = add_material(
+            csx=self.sim.csx,
+            name=self._dielectric_name(),
             epsilon=self._dielectric.epsr_at_freq(ref_freq),
             kappa=self._dielectric.kappa_at_freq(ref_freq),
+            color=colors["ptfe"],
+            alpha=200,
         )
         construct_cylindrical_shell(
             prop=dielectric_prop,
@@ -2677,7 +2715,7 @@ class Coax(Structure):
     def _construct_shield(self) -> None:
         """
         """
-        shield_prop = self.sim.csx.AddMetal(self._shield_name())
+        shield_prop = add_metal(csx=self.sim.csx, name=self._shield_name())
         construct_cylindrical_shell(
             prop=shield_prop,
             start=self._start(),

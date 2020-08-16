@@ -51,7 +51,12 @@ from pyems.calc import wavenumber
 from pyems.feed import Feed
 from pyems.priority import priorities
 from pyems.const import Z0
-from pyems.csxcad import construct_box
+from pyems.csxcad import (
+    construct_box,
+    add_metal,
+    add_conducting_sheet,
+    construct_cylinder,
+)
 
 
 class Port(ABC):
@@ -477,16 +482,15 @@ class MicrostripPort(Port):
         """
         Set trace.
         """
-        trace_prop = self._sim.csx.AddConductingSheet(
-            "Microstrip_Trace_" + str(self.number),
+        trace_prop = add_conducting_sheet(
+            csx=self._sim.csx,
+            name="Microstrip_Trace_" + str(self.number),
             conductivity=self.conductivity,
             thickness=self.thickness,
         )
         box = self._trace_box()
         construct_box(
-            prop=trace_prop,
-            box=box,
-            priority=priorities["trace"],
+            prop=trace_prop, box=box, priority=priorities["trace"],
         )
 
     def _trace_box(self) -> Box3:
@@ -766,16 +770,15 @@ class DifferentialMicrostripPort(Port):
     def _set_traces(self) -> None:
         """
         """
-        trace_prop = self._sim.csx.AddConductingSheet(
-            "Differential_Microstrip_Trace_" + str(self.number),
+        trace_prop = add_conducting_sheet(
+            csx=self._sim.csx,
+            name="Differential_Microstrip_Trace_" + str(self.number),
             conductivity=self._conductivity,
             thickness=self._thickness,
         )
         for box in self._trace_boxes():
             construct_box(
-                prop=trace_prop,
-                box=box,
-                priority=priorities["trace"],
+                prop=trace_prop, box=box, priority=priorities["trace"],
             )
 
     def _trace_boxes(self) -> Tuple[Box3, Box3]:
@@ -1376,16 +1379,14 @@ class RectWaveguidePort(Port):
     def add_metal_shell(self, thickness: float) -> None:
         """
         """
-        shell_prop = self._sim.csx.AddMetal("rect_wg_metal")
+        shell_prop = add_metal(csx=self._sim.csx, name="rect_wg_metal")
         back_face = self._shell_face_box(
             const_dim=self.propagation_axis().intval(),
             const_dim_idx=0,
             thickness=thickness,
         )
         construct_box(
-            prop=shell_prop,
-            box=back_face,
-            priority=priorities["trace"],
+            prop=shell_prop, box=back_face, priority=priorities["trace"],
         )
         dims = list(range(3))
         del dims[self.propagation_axis().intval()]
@@ -1395,9 +1396,7 @@ class RectWaveguidePort(Port):
                     const_dim=dim, const_dim_idx=i, thickness=thickness
                 )
                 construct_box(
-                    prop=shell_prop,
-                    box=face,
-                    priority=priorities["trace"],
+                    prop=shell_prop, box=face, priority=priorities["trace"],
                 )
 
     def _shell_face_box(
@@ -1706,15 +1705,13 @@ class CoaxPort(Port):
         """
         """
         # TODO bug?? cylinder ignored if start > stop
-        if self._direction() == 1:
-            start = self._start.coordinate_list()
-            stop = self._stop.coordinate_list()
-        else:
-            start = self._stop.coordinate_list()
-            stop = self._start.coordinate_list()
+        if not self._direction() == 1:
+            start = self._stop
+            stop = self._start
 
-        core_prop = self.sim.csx.AddMetal(self._core_name())
-        core_prop.AddCylinder(
+        core_prop = add_metal(csx=self.sim.csx, name=self._core_name())
+        construct_cylinder(
+            prop=core_prop,
             start=start,
             stop=stop,
             radius=self._core_radius,
