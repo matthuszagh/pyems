@@ -33,13 +33,13 @@ To accomplish this goal, pyems provides:
 Although ease of use is one of pyems's primary goals, another one of
 its major goals is to not restrict the power of OpenEMS. To this
 effect, the underlying OpenEMS Python interface is still directly
-accessible to the user, though it should never be needed (cases where
-it is needed are considered bugs and should be
-reported). Additionally, there are some cases where the interface has
-been designed to allow feature accessibility in a way that can be
-misused by the casual user. Pyems will always prioritize expressivity
-over protection against misuse. These cases should be properly
-documented.
+accessible to the user. Indeed, there are cases in which it is
+necessary to use the OpenEMS interface (e.g. applying transformations
+and constructing some simple shapes). Additionally, there are some
+cases where the interface has been designed to allow feature
+accessibility in a way that can be misused by the casual user. Pyems
+will always prioritize expressivity over protection against
+misuse. These cases should be properly documented.
 
 * Installation
 Pypi installation is planned but not yet available. Pyems must
@@ -50,7 +50,7 @@ view simulation field dumps (recommended) you must also have a copy of
 [[https://www.paraview.org/][ParaView]]. All of this software is (of course) open source and free to
 download and use.
 
-* Usage
+* Tutorial
 I have not yet written a proper reference documentation for pyems. To
 help new users get acquainted with it, I've written a tutorial
 presented in this section. This should help users understand the API
@@ -499,6 +499,21 @@ If we had plotted this and additionally computed the directivity, we
 would see
 
 [[file:.img/coupler_plot.svg]]
+
+* Usage
+This section is very incomplete.
+
+** Structures
+:PROPERTIES:
+:ID:       556e1040-a5bd-4175-8b80-d7d613fea8ba
+:END:
+** Transformations
+Many [[id:556e1040-a5bd-4175-8b80-d7d613fea8ba][structure]] objects accept optional transformation
+parameters. They also generally accept position coordinates. The
+object is first created at the origin, then the transform is applied,
+finally followed by a translation of the center of the structure to
+the supplied position. As a result translation transformations should
+not be needed, although pyems will accept them.
 
 * Planned Features
 The following set of features is planned, but not currently
