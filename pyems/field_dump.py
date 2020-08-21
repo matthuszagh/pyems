@@ -13,18 +13,18 @@ class DumpType(Enum):
     Field (and other) dump types.
     """
 
-    efield_time = 0
-    hfield_time = 1
-    current_time = 2
-    current_density_time = 3
-    efield_frequency = 10
-    hfield_frequency = 11
-    current_frequency = 12
-    current_density_frequency = 13
-    local_sar_frequency = 20
-    average_sar_frequency_1g = 21
-    average_sar_frequency_10g = 22
-    raw_data = 29
+    efield_time = (0, "Et")
+    hfield_time = (1, "Ht")
+    current_time = (2, "It")
+    current_density_time = (3, "Jt")
+    efield_frequency = (10, "Ef")
+    hfield_frequency = (11, "Hf")
+    current_frequency = (12, "If")
+    current_density_frequency = (13, "Jf")
+    local_sar_frequency = (20, "SAR_f")
+    average_sar_frequency_1g = (21, "SAR_1g_f")
+    average_sar_frequency_10g = (22, "SAR_10g_f")
+    raw_data = (29, "raw")
 
 
 class FieldDump:
@@ -65,8 +65,8 @@ class FieldDump:
         self._dir_path = dir_path
 
         dump = self._sim.csx.AddDump(
-            os.path.join(self._dir_path, "Et_"),
-            dump_type=self._dump_type.value,
+            os.path.join(self._dir_path, self._dump_type.value[1]),
+            dump_type=self._dump_type.value[0],
             file_type=0,
         )
         construct_box(
@@ -90,7 +90,7 @@ class FieldDump:
     def dump_type(self) -> int:
         """
         """
-        return self._dump_type
+        return self._dump_type.value[0]
 
     def view(self):
         """
@@ -98,7 +98,11 @@ class FieldDump:
         subprocess.run(
             [
                 "paraview",
-                "--data={}".format(os.path.join(self._dir_path, "Et__..vtr")),
+                "--data={}".format(
+                    os.path.join(
+                        self._dir_path, self._dump_type.value[1] + "_..vtr"
+                    )
+                ),
             ]
         )
 
