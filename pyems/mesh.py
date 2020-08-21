@@ -349,6 +349,27 @@ def _type_at_pos(prims: List[CSPrimitives], dim: int, pos: float) -> Type:
     return current_type
 
 
+def _dim_idx_to_desc(idx: int) -> str:
+    """
+    Provide a descriptor for a dimensional index.  In this context, 0
+    indicates xmin, 1 xmax, 2 ymin, etc.
+    """
+    if idx == 0:
+        return "xmin"
+    if idx == 1:
+        return "xmax"
+    if idx == 2:
+        return "ymin"
+    if idx == 3:
+        return "ymax"
+    if idx == 4:
+        return "zmin"
+    if idx == 5:
+        return "zmax"
+
+    raise ValueError("Index must be between 0 and 5, inclusive.")
+
+
 class Mesh:
     """
     An OpenEMS mesh object that supports automatic mesh generation.
@@ -532,7 +553,7 @@ class Mesh:
         """
         for i, box in enumerate(boxes):
             if not box.has_zero_dim():
-                pml_prop = self.sim.csx.AddMaterial("PML_" + str(i), epsilon=1)
+                pml_prop = self.sim.csx.AddMaterial("PML_8_" + _dim_idx_to_desc(i), epsilon=1)
                 pml_prop.SetColor("#d3d3d3", alpha=200)
                 construct_box(
                     prop=pml_prop,
