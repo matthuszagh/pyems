@@ -555,13 +555,6 @@ names. Additionally, they shouldn't pass back frequency and time
 values. This should be retreived with other methods. Note that this
 will require adjustments to port.py too.
 
-** TODO floating point precision errors
-Zero-dimension structures can easily be ignored because of floating
-point value changes. I think the solution is to set a precision (for
-instance see the mesh.py file). However, I'm still getting some
-ignored structures. Maybe I also need to do this when adding
-structures?
-
 ** TODO rectwaveguideport propagation axis
 This should use the Axis object.
 
