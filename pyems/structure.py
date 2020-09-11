@@ -2316,11 +2316,6 @@ class SMDPassive(Structure):
     def _construct_pads(self) -> None:
         """
         """
-        pad_prop = self.pcb.sim.csx.AddConductingSheet(
-            self._pad_name(),
-            conductivity=self.pcb.pcb_prop.metal_conductivity(),
-            thickness=self.pcb.pcb_prop.copper_thickness(self._pcb_layer),
-        )
         pad_prop = add_conducting_sheet(
             csx=self.pcb.sim.csx,
             name=self._pad_name(),
