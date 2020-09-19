@@ -212,6 +212,7 @@ class Simulation:
 
     def _mesh_errors(self) -> None:
         """
+        Declare any errors between the PML and simulation structure.
         """
         for port in self.ports:
             if port.pml_overlap():
