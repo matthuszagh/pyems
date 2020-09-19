@@ -578,7 +578,7 @@ class Mesh:
 
     def _trim_air_mesh(self) -> None:
         """
-        Remove excessive boundary cells.
+        Remove excess boundary cells.
         """
         if self.simulation_bounds is not None:
             return
