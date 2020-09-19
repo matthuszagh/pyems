@@ -1,5 +1,6 @@
 **/__pycache__
 /examples/sim/
+/examples/*.kicad_mod
 /build/
 /dist/
 *.egg-info
