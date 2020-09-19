@@ -19,7 +19,7 @@ class Type(Enum):
 
     metal = 0
     nonmetal = 1
-    air = 1
+    air = 2
 
 
 class BoundedType:
