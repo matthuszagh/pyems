@@ -47,6 +47,12 @@ colors = {
 }
 
 
+def csxcad_nearest(val_or_arr):
+    """
+    """
+    return np.around(val_or_arr, PREC)
+
+
 def add_material(
     csx: ContinuousStructure,
     name: str,
@@ -437,7 +443,7 @@ def add_line(grid: CSRectGrid, dim: int, val: float):
     """
     Add a grid line, rounding to limited precision.
     """
-    grid.AddLine(dim, np.around(val, PREC))
+    grid.AddLine(dim, csxcad_nearest(val))
 
 
 def _add_linpoly(
@@ -451,8 +457,8 @@ def _add_linpoly(
     """
     """
     if np.isclose(length, 0):
-        points = np.around(points, PREC)
-        elevation = np.around(elevation, PREC)
+        points = csxcad_nearest(points)
+        elevation = csxcad_nearest(elevation)
 
     prim = prop.AddLinPoly(
         priority=priority,
@@ -473,8 +479,8 @@ def _add_polygon(
 ) -> CSPrimitives:
     """
     """
-    points = np.around(points, PREC)
-    elevation = np.around(elevation, PREC)
+    points = csxcad_nearest(points)
+    elevation = csxcad_nearest(elevation)
 
     prim = prop.AddPolygon(
         priority=priority,
@@ -493,8 +499,8 @@ def _add_box(
     # Round unconditionally even though doing so may be unnecessary
     # (some dimensions will have nonzero length). This shouldn't have
     # a downside and checking would take longer.
-    start = np.around(start, PREC)
-    stop = np.around(stop, PREC)
+    start = csxcad_nearest(start)
+    stop = csxcad_nearest(stop)
 
     prim = prop.AddBox(priority=priority, start=start, stop=stop)
     return prim
