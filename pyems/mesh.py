@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from enum import Enum
 from bisect import bisect_left, insort_left
 import numpy as np
@@ -6,8 +6,14 @@ import scipy.optimize
 from CSXCAD.CSPrimitives import CSPrimitives
 from pyems.simulation import Simulation
 from pyems.calc import wavelength
-from pyems.coordinate import Box3, Coordinate3
-from pyems.csxcad import PREC, add_line, construct_box, add_material
+from pyems.coordinate import Box3, Coordinate3, c3_from_dim
+from pyems.csxcad import (
+    PREC,
+    add_line,
+    construct_box,
+    add_material,
+    csxcad_nearest,
+)
 from pyems.priority import priorities
 
 
@@ -370,6 +376,32 @@ def _dim_idx_to_desc(idx: int) -> str:
     raise ValueError("Index must be between 0 and 5, inclusive.")
 
 
+def _mesh_lines_in_box(
+    mesh_lines: List[List[float]], box: Box3
+) -> List[List[float]]:
+    """
+    All mesh line positions within a box.
+
+    :param mesh_lines: List of 3 inner lists, where each inner list
+        contains the mesh line positions for that dimension.  The
+        first inner list corresponds to the x-dimension, the second to
+        the y-dimension, and the third to the z-dimension.
+    :param box: 3D box that mesh lines must be inside of.
+    """
+    mesh_lines_inside = []
+    for dim in [0, 1, 2]:
+        dim_mesh = []
+        lower_dim = box.min_corner[dim]
+        upper_dim = box.max_corner[dim]
+        for line in mesh_lines[dim]:
+            if line >= lower_dim and line <= upper_dim:
+                dim_mesh.append(line)
+
+        mesh_lines_inside.append(dim_mesh)
+
+    return mesh_lines_inside
+
+
 class Mesh:
     """
     An OpenEMS mesh object that supports automatic mesh generation.
@@ -499,6 +531,50 @@ class Mesh:
         if show_pml:
             self._show_pml(self.pml_boxes())
         self.sim.post_mesh()
+        self._ensure_pml_structure_uniform()
+
+    def _ensure_pml_structure_uniform(self):
+        """
+        All materials must be uniform inside a PML in the direction of
+        the PML boundary.  Emit an error if this is not the case.
+        """
+        pml_boxes = self.pml_boxes()
+        for i, box in enumerate(pml_boxes):
+            if box.has_zero_dim():
+                continue
+            dim = i // 2
+            lines = _mesh_lines_in_box(self.mesh_lines, box)
+            non_dim1 = (dim + 1) % 3
+            non_dim2 = (dim + 2) % 3
+            dim_lines = lines[dim]
+            if len(dim_lines) == 0:
+                continue
+            for pos1 in lines[non_dim1]:
+                for pos2 in lines[non_dim2]:
+                    prop = self.sim.csx.GetPropertyByCoordPriority(
+                        csxcad_nearest(
+                            c3_from_dim(
+                                dim, (dim_lines[0], pos1, pos2)
+                            ).coordinate_list()
+                        )
+                    )
+                    for dim_pos in dim_lines[1:]:
+                        dim_prop = self.sim.csx.GetPropertyByCoordPriority(
+                            csxcad_nearest(
+                                c3_from_dim(
+                                    dim, (dim_pos, pos1, pos2)
+                                ).coordinate_list()
+                            )
+                        )
+                        if not dim_prop.GetName() == prop.GetName():
+                            raise RuntimeError(
+                                (
+                                    "{} PML does not contain uniform structure."
+                                    " Offending coordinate is ({}, {}, {})"
+                                ).format(
+                                    _dim_idx_to_desc(i), dim_pos, pos1, pos2
+                                )
+                            )
 
     def _trim_air_mesh(self) -> None:
         """
