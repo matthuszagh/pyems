@@ -548,7 +548,9 @@ class Mesh:
                 highest_pos = btype.upper_bound
         return highest_pos
 
-    def _show_pml(self, boxes: List[Box3]) -> None:
+    def _show_pml(
+        self, boxes: Tuple[Box3, Box3, Box3, Box3, Box3, Box3]
+    ) -> None:
         """
         Add primitives so that PML boundaries are displayed in
         AppCSXCAD.  Even though these are material properties, they're
@@ -571,10 +573,13 @@ class Mesh:
                     prop=pml_prop, box=box, priority=priorities["x"],
                 )
 
-    def pml_boxes(self) -> List[Box3]:
+    def pml_boxes(self) -> Tuple[Box3, Box3, Box3, Box3, Box3, Box3]:
         """
+        Tuple of 6 Box3, corresponding to PML boxes for:
+
+        (xmin, xmax, ymin, ymax, zmin, zmax).
         """
-        boxes = []
+        boxes: List[Box3] = []
         pml_cells = self.sim.boundary_conditions.pml_bounds()
         # TODO find more concise way to do this
         boxes.append(
@@ -661,7 +666,7 @@ class Mesh:
                 ),
             )
         )
-        return boxes
+        return tuple(boxes)
 
     def add_line_manual(self, dim: int, pos: float) -> None:
         """
