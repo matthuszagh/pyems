@@ -50,14 +50,22 @@ colors = {
 def add_material(
     csx: ContinuousStructure,
     name: str,
-    epsilon: float,
-    kappa: float,
+    epsilon: float = 1.0,
+    mue: float = 1.0,
+    kappa: float = 0.0,
+    sigma: float = 0.0,
     color: Optional[str] = None,
     alpha: int = 255,
 ) -> CSProperties:
     """
+    :param epsilon: relative electric permeability.
+    :param mue: relative magnetic permeability.
+    :param kappa: electric conductivity.
+    :param sigma: magnetic conductivity.
     """
-    prop = csx.AddMaterial(name, epsilon=epsilon, kappa=kappa)
+    prop = csx.AddMaterial(
+        name, epsilon=epsilon, mue=mue, kappa=kappa, sigma=sigma
+    )
     if not color is None:
         prop.SetColor(color, alpha)
 

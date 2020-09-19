@@ -7,7 +7,7 @@ from CSXCAD.CSPrimitives import CSPrimitives
 from pyems.simulation import Simulation
 from pyems.calc import wavelength
 from pyems.coordinate import Box3, Coordinate3
-from pyems.csxcad import PREC, add_line, construct_box
+from pyems.csxcad import PREC, add_line, construct_box, add_material
 from pyems.priority import priorities
 
 
@@ -550,15 +550,25 @@ class Mesh:
 
     def _show_pml(self, boxes: List[Box3]) -> None:
         """
+        Add primitives so that PML boundaries are displayed in
+        AppCSXCAD.  Even though these are material properties, they're
+        defined as a low-priority air layer so they do not affect the
+        simulation.
         """
         for i, box in enumerate(boxes):
             if not box.has_zero_dim():
-                pml_prop = self.sim.csx.AddMaterial("PML_8_" + _dim_idx_to_desc(i), epsilon=1)
-                pml_prop.SetColor("#d3d3d3", alpha=200)
+                pml_prop = add_material(
+                    csx=self.sim.csx,
+                    name="PML_8_" + _dim_idx_to_desc(i),
+                    epsilon=1,
+                    mue=1,
+                    kappa=0,
+                    sigma=0,
+                    color="#d3d3d3",
+                    alpha=200,
+                )
                 construct_box(
-                    prop=pml_prop,
-                    box=box,
-                    priority=priorities["x"],
+                    prop=pml_prop, box=box, priority=priorities["x"],
                 )
 
     def pml_boxes(self) -> List[Box3]:
