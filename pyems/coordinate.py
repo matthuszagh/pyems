@@ -352,6 +352,31 @@ def c3_maybe_tuple(coord: C3Tuple) -> Coordinate3:
     return coord
 
 
+def c2_from_dim(dim: int, vals: Tuple[float, float]) -> Coordinate2:
+    """
+    Coordinate2 value from a tuple of 2 values and a dimension.  For
+    example, if dim==0, this will return Coordinate2(vals[0],
+    vals[1]).  But, if dim==1, this will return Coordinate2(vals[1],
+    vals[0]).
+    """
+    return Coordinate2(vals[-dim % 2], vals[(-dim + 1) % 2])
+
+
+def c3_from_dim(dim: int, vals: Tuple[float, float, float]) -> Coordinate3:
+    """
+    Coordinate3 value from a tuple of 3 values and a dimension.  The
+    first tuple value cooresponds to the coordinate value for the
+    provided dimension.  The other tuple values are the next
+    consecutive coordinate values mod 3.  For example, if dim==0, this
+    will return Coordinate3(vals[0], vals[1], vals[2]).  If dim==1,
+    this will return Coordinate3(vals[1], vals[2], vals[0]).  If
+    dim==2, this will return Coordinate3(vals[2], vals[0], vals[1]).
+    """
+    return Coordinate3(
+        vals[-dim % 3], vals[(-dim + 1) % 3], vals[(-dim + 2) % 3]
+    )
+
+
 class Box2:
     """
     """
