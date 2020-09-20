@@ -53,15 +53,35 @@ def add_material(
     sigma: float = 0.0,
     color: Optional[str] = None,
     alpha: int = 255,
+    density: float = 0.0,
 ) -> CSProperties:
     """
-    :param epsilon: relative electric permeability.
-    :param mue: relative magnetic permeability.
-    :param kappa: electric conductivity.
-    :param sigma: magnetic conductivity.
+    :param epsilon: Relative electric permeability.
+    :param mue: Relative magnetic permeability.
+    :param kappa: Electric conductivity.
+    :param sigma: Magnetic conductivity.
+    :param color: Color of the material as rendered by AppCSXCAD.
+        This has no effect on the simulation.  The color string must
+        be provided as a hexadecimal value.  E.g., copper color be
+        given as "#CD7F32".
+    :param alpha: Opacity of the material as rendered by AppCSXCAD.
+        This has no effect on the simulation.  Valid values are
+        integers in the range [0,255] (inclusive), where 0 is
+        perfectly transparent and 255 is perfectly opaque.
+    :param density: Material density in kg/m^3.  This only has an
+        effect when performing SAR post-processing.  It has no effect
+        on the simulation.  Therefore, the default value of 0 is
+        suitable for most simulations.
+
+    :returns: The CSXCAD CSProperties object for the material.
     """
     prop = csx.AddMaterial(
-        name, epsilon=epsilon, mue=mue, kappa=kappa, sigma=sigma
+        name,
+        epsilon=epsilon,
+        mue=mue,
+        kappa=kappa,
+        sigma=sigma,
+        density=density,
     )
     if not color is None:
         prop.SetColor(color, alpha)
