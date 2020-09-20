@@ -8,11 +8,8 @@ from CSXCAD.CSPrimitives import CSPrimitives
 from pyems.simulation import Simulation
 from pyems.calc import wavelength
 from pyems.coordinate import Box3, Coordinate3, c3_from_dim
-from pyems.csxcad import (
-    PREC,
-    add_line,
-    construct_box,
-    add_material,
+from pyems.csxcad import add_line, construct_box, add_material
+from pyems.fp import (
     fp_equalp,
     fp_nearest,
     fp_equalp,
@@ -157,9 +154,9 @@ def _remove_dups(lst: List[float], fixed: List[float] = []) -> List[float]:
         if last is not None:
             if elt == last:  # can always skip if identical
                 continue
-            elif np.isclose(elt, last) and elt not in fixed:
+            elif fp_equalp(elt, last) and elt not in fixed:
                 continue
-            elif np.isclose(elt, last) and elt in fixed:
+            elif fp_equalp(elt, last) and elt in fixed:
                 del new_lst[-1]
         last = elt
         new_lst.append(elt)
@@ -289,7 +286,7 @@ def _lines_const_factor_in_bounds(
 ) -> np.array:
     """
     """
-    if np.isclose(lower_spacing, upper_spacing):
+    if np.isclose(lower_spacing, upper_spacing, rtol=1e-3, atol=0):
         num_lines = int(np.ceil((upper - lower) / lower_spacing)) + 1
         num_lines = int(np.max([num_lines, min_lines]))
         return np.linspace(lower, upper, num_lines)
@@ -387,7 +384,7 @@ def _type_at_pos(prims: List[CSPrimitives], dim: int, pos: float) -> Type:
             dim_size = prim_bounds[dim][1] - prim_bounds[dim][0]
             # If there are multiple primitives of the same size, we
             # want to register metal if one of the primitives is metal.
-            if np.isclose(dim_size, smallest_dim):
+            if np.isclose(dim_size, smallest_dim, rtol=1e-3, atol=0):
                 if _prim_metalp(prim):
                     current_type = Type.metal
                     smallest_dim = dim_size
@@ -1374,7 +1371,7 @@ class Mesh:
                 # inside the metal region. Moreover, doing so can
                 # create a small spacing adjacent to a much larger
                 # spacing, which violates smoothness.
-                if not np.isclose(
+                if not fp_equalp(
                     lower, self.sim_bounds[dim][0]
                 ) and not self._is_fixed_line(dim, lower):
                     if (
@@ -1386,7 +1383,7 @@ class Mesh:
                         adj = first_spacing / 3
                     lower += adj
                     # lower_spacing += adj
-                if not np.isclose(
+                if not fp_equalp(
                     upper, self.sim_bounds[dim][1]
                 ) and not self._is_fixed_line(dim, upper):
                     if (
@@ -1587,11 +1584,9 @@ class Mesh:
         for prim in prims:
             prim_bounds = _get_prim_bounds(prim)
             for dim in range(3):
-                if np.isclose(prim_bounds[dim][0], prim_bounds[dim][1]):
-                    # TODO is rounding to PREC here necessary?
-                    self.add_fixed_line(
-                        dim, np.around(prim_bounds[dim][0], PREC)
-                    )
+                if fp_equalp(prim_bounds[dim][0], prim_bounds[dim][1]):
+                    # TODO is rounding here necessary?
+                    self.add_fixed_line(dim, fp_nearest(prim_bounds[dim][0]))
 
                 self.fixed_lines[dim].sort()
                 self.fixed_lines[dim] = _remove_dups(self.fixed_lines[dim])
@@ -1639,24 +1634,20 @@ class Mesh:
             for dim, bounds in enumerate(self.simulation_bounds):
                 existing_lower = bounded_types[dim][0].get_bounds()[0]
                 existing_upper = bounded_types[dim][-1].get_bounds()[1]
-                if (
-                    bounds[0] > existing_lower
-                    and not np.isclose(bounds[0], existing_lower)
-                ) or (
-                    bounds[1] < existing_upper
-                    and not np.isclose(bounds[1], existing_upper)
+                if fp_gtp(bounds[0], existing_lower) or fp_ltp(
+                    bounds[1], existing_upper
                 ):
                     raise ValueError(
                         "Requested simulation bounds that would ignore part "
                         "of a physical structure."
                     )
                 else:
-                    if not np.isclose(bounds[0], existing_lower):
+                    if not fp_equalp(bounds[0], existing_lower):
                         btype = BoundedType(
                             Type.air, bounds[0], existing_lower
                         )
                         bounded_types[dim].insert(0, btype)
-                    if not np.isclose(bounds[1], existing_upper):
+                    if not fp_equalp(bounds[1], existing_upper):
                         btype = BoundedType(
                             Type.air, existing_upper, bounds[1]
                         )

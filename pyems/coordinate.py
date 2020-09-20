@@ -3,6 +3,7 @@ from typing import List, Union, Tuple, Optional
 from copy import deepcopy
 from functools import partial
 import numpy as np
+from pyems.fp import fp_equalp
 
 
 def val_inside(val: float, bound1: float, bound2: float) -> bool:
@@ -473,8 +474,8 @@ class Box2:
         """
         Return True if at least 1 dimension of the box has zero size.
         """
-        if np.isclose(self.max_corner.x - self.min_corner.x, 0) or np.isclose(
-            self.max_corner.y - self.min_corner.y, 0
+        if fp_equalp(self.max_corner.x, self.min_corner.x) or fp_equalp(
+            self.max_corner.y, self.min_corner.y
         ):
             return True
         return False
@@ -667,9 +668,9 @@ class Box3:
         Return True if at least 1 dimension of the box has zero size.
         """
         if (
-            np.isclose(self.max_corner.x - self.min_corner.x, 0)
-            or np.isclose(self.max_corner.y - self.min_corner.y, 0)
-            or np.isclose(self.max_corner.z - self.min_corner.z, 0)
+            fp_equalp(self.max_corner.x, self.min_corner.x)
+            or fp_equalp(self.max_corner.y, self.min_corner.y)
+            or fp_equalp(self.max_corner.z, self.min_corner.z)
         ):
             return True
         return False

@@ -57,6 +57,7 @@ from pyems.csxcad import (
     add_conducting_sheet,
     construct_cylinder,
 )
+from pyems.fp import fp_equalp
 
 
 class Port(ABC):
@@ -1686,7 +1687,7 @@ class CoaxPort(Port):
         """
         """
         for i in range(3):
-            if np.isclose(self._start[i], self._stop[i]):
+            if fp_equalp(self._start[i], self._stop[i]):
                 return Axis(i)
         raise RuntimeError("Unable to determine propagation axis.")
 
