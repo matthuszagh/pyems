@@ -424,7 +424,7 @@ def fp_warning(func: Callable):
     structure which may cause misalignment between the mesh and
     structure.
     """
-    # raise RuntimeWarning(
+    # warn(
     #     (
     #         "Transformation requested in `{}`. If the desired "
     #         "transformation is a 3D rotation that will make the planar "

@@ -1082,7 +1082,7 @@ class Mesh:
         :param upper: Index of the last line.  This line is included.
         """
         if upper - lower == 1:
-            raise RuntimeWarning("More than 2 lines should be specified.")
+            warn("More than 2 lines should be specified.")
         for i in range(lower, upper + 1):
             if self.get_mesh_line(dim, i) in self.fixed_lines[dim]:
                 raise RuntimeError("Trying to move an unmovable line.")

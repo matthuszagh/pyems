@@ -1,4 +1,5 @@
 from typing import List, Tuple
+from warnings import warn
 import numpy as np
 from pyems.simulation import Simulation
 from pyems.mesh import Mesh
@@ -113,9 +114,7 @@ class Feed:
         """
         """
         if np.is_complex(self.impedance):
-            raise RuntimeWarning(
-                "Only feed resistances are currently supported."
-            )
+            warn("Only feed resistances are currently supported.")
 
         return (np.real(self.impedance), 0, 0)
 

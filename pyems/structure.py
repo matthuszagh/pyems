@@ -7,6 +7,7 @@ cylindrical shell, air cylinder, circular pads, etc.
 
 from abc import ABC, abstractmethod
 from typing import List, Tuple
+from warnings import warn
 import numpy as np
 from CSXCAD.CSTransform import CSTransform
 from CSXCAD.CSProperties import CSProperties
@@ -89,7 +90,7 @@ def _via_noconnect_layers(
         if noconnect_layer in layers:
             valid_layers.append(noconnect_layer)
         else:
-            raise RuntimeWarning(
+            warn(
                 "Via no-connect layer specified for layer where via "
                 "isn't present. No-connect for layer {} will be "
                 "ignored. Check your code.".format(noconnect_layer)
@@ -1106,7 +1107,7 @@ class Microstrip(Structure):
         """
         """
         if self._port_number is not None and self._ref_impedance is None:
-            raise RuntimeWarning(
+            warn(
                 "Reference impedance not set for port {}".format(
                     self._port_number
                 )
@@ -1118,7 +1119,7 @@ class Microstrip(Structure):
         if (
             self._gnd_gap[0] is None or self._gnd_gap[1] is None
         ) and self._trace_layer in self._pcb.copper_pours():
-            raise RuntimeWarning(
+            warn(
                 "Ground gaps have not been set on the trace layer "
                 "where a copper pour has been set. This is most "
                 "likely an error. Please check your simulation."
@@ -2272,7 +2273,7 @@ class SMDPassive(Structure):
         self._r = r
         self._l = l
         if self._l is not None:
-            raise RuntimeWarning(
+            warn(
                 "Setting an inductance value has no effect. OpenEMS "
                 "does not support lumped inductances yet."
             )
