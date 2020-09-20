@@ -1,6 +1,7 @@
 from typing import List, Tuple, Optional
 from enum import Enum
 from bisect import bisect_left, bisect_right, insort_left
+from warnings import warn
 import numpy as np
 import scipy.optimize
 from CSXCAD.CSPrimitives import CSPrimitives
@@ -527,12 +528,76 @@ class Mesh:
         size_ordered_bounded_types = _sort_bounded_types(bounded_types)
         self._gen_mesh_for_bounded_types(size_ordered_bounded_types)
         self._trim_air_mesh()
+        self._smooth_pml_mesh_lines()
 
         self._set_mesh_from_lines()
         if show_pml:
             self._show_pml(self.pml_boxes())
         self.sim.post_mesh()
         self._ensure_pml_structure_uniform()
+
+    def _smooth_pml_mesh_lines(self):
+        """
+        Mesh lines inside a PML should have uniform spacing in the
+        direction of the boundary.  Move mesh lines to adhere to this
+        requirement.
+        """
+        pml_boxes = self.pml_boxes()
+        for i, box in enumerate(pml_boxes):
+            if box.has_zero_dim():
+                continue
+            box.set_increasing()
+            dim = i // 2
+            is_lower_bound = i % 2 == 0
+            lines = _mesh_lines_in_box(self.mesh_lines, box)[dim]
+            idx_lower = bisect_left(self.mesh_lines[dim], lines[0])
+            idx_upper = bisect_right(self.mesh_lines[dim], lines[-1])
+            dist = lines[-1] - lines[0]
+            spacing = dist / (len(lines) - 1)
+            num_lines = len(lines)
+            # ensure that new spacing does not violate mesh smoothness
+            if is_lower_bound:
+                limit_spacing = (
+                    self.mesh_lines[dim][idx_upper]
+                    - self.mesh_lines[dim][idx_upper - 1]
+                )
+            else:
+                limit_spacing = (
+                    self.mesh_lines[dim][idx_lower]
+                    - self.mesh_lines[dim][idx_lower - 1]
+                )
+            smooth_factor = self.smooth[dim]
+            if (
+                spacing > limit_spacing
+                and spacing / limit_spacing >= smooth_factor
+            ):
+                spacing = limit_spacing * smooth_factor
+                warn(
+                    "PML mesh smoothing is decreasing the simulation "
+                    "box size.  This may cause some structures to be "
+                    "clipped, but it shouldn't matter because the "
+                    "clipping only occurs inside the PML."
+                )
+            elif (
+                spacing < limit_spacing
+                and limit_spacing / spacing >= smooth_factor
+            ):
+                raise RuntimeError(
+                    "PML mesh smoothing is increasing the simulation "
+                    "box size.  This should never happen.  Either "
+                    "structures in your PML are non-uniform in the "
+                    "direction of the PML in which case you'll get an "
+                    "error anyway, or this is a bug in pyems."
+                )
+
+            del self.mesh_lines[dim][idx_lower:idx_upper]
+            if is_lower_bound:
+                init_pos = lines[-1]
+                spacing *= -1
+            else:
+                init_pos = lines[0]
+            new_lines = [init_pos + i * spacing for i in range(num_lines)]
+            self._add_lines_to_mesh(new_lines, dim)
 
     def _ensure_pml_structure_uniform(self):
         """
@@ -541,9 +606,9 @@ class Mesh:
         """
         pml_boxes = self.pml_boxes()
         for i, box in enumerate(pml_boxes):
-            box.set_increasing()
             if box.has_zero_dim():
                 continue
+            box.set_increasing()
             dim = i // 2
             lines = _mesh_lines_in_box(self.mesh_lines, box)
             non_dim1 = (dim + 1) % 3
