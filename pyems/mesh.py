@@ -564,8 +564,8 @@ class Mesh:
         bounded_types = self._bounded_types(bounds, physical_prims)
         self.bounded_types = self._set_expanded_bounds(bounded_types)
         self._set_metal_bounds(bounded_types)
-        size_ordered_bounded_types = _sort_bounded_types(bounded_types)
-        self._gen_mesh_for_bounded_types(size_ordered_bounded_types)
+        self.size_ordered_bounded_types = _sort_bounded_types(bounded_types)
+        self._gen_mesh_for_bounded_types(self.size_ordered_bounded_types)
         self._trim_air_mesh()
         self._smooth_pml_mesh_lines()
 
@@ -611,12 +611,6 @@ class Mesh:
                 and spacing / limit_spacing >= smooth_factor
             ):
                 spacing = limit_spacing * smooth_factor
-                warn(
-                    "PML mesh smoothing is decreasing the simulation "
-                    "box size.  This may cause some structures to be "
-                    "clipped, but it shouldn't matter because the "
-                    "clipping only occurs inside the PML."
-                )
             elif (
                 spacing < limit_spacing
                 and limit_spacing / spacing >= smooth_factor
@@ -629,14 +623,78 @@ class Mesh:
                     "error anyway, or this is a bug in pyems."
                 )
 
+            # only smooth lines if necessary
+            if np.isclose(spacing, limit_spacing):
+                continue
+
             del self.mesh_lines[dim][idx_lower:idx_upper]
             if is_lower_bound:
+                init_pos = lines[0]
+            else:
                 init_pos = lines[-1]
                 spacing *= -1
-            else:
-                init_pos = lines[0]
-            new_lines = [init_pos + i * spacing for i in range(num_lines)]
+
+            new_lines = sorted(
+                [init_pos + i * spacing for i in range(num_lines)]
+            )
             self._add_lines_to_mesh(new_lines, dim)
+
+            if is_lower_bound:
+                existing_bound = new_lines[-1]
+                other_bound = None
+                for bt in self.size_ordered_bounded_types[dim]:
+                    bt_bounds = bt.get_bounds()
+                    bt_lb = bt_bounds[0]
+                    bt_ub = bt_bounds[1]
+                    if existing_bound >= bt_lb and existing_bound <= bt_ub:
+                        other_bound = bt_ub
+                        break
+
+                lower_spacing = spacing
+                line_below_idx, line_below = self._line_below(dim, other_bound)
+                upper_spacing = (
+                    self.mesh_lines[dim][line_below_idx + 1] - line_below
+                )
+                redo_lines = _lines_const_factor_in_bounds(
+                    existing_bound,
+                    line_below,
+                    lower_spacing,
+                    upper_spacing,
+                    dim,
+                    0,
+                    self.smooth[dim],
+                )
+                del self.mesh_lines[dim][num_lines:line_below_idx]
+                self._add_lines_to_mesh(redo_lines, dim)
+
+            else:
+                existing_bound = new_lines[0]
+                other_bound = None
+                for bt in self.size_ordered_bounded_types[dim]:
+                    bt_bounds = bt.get_bounds()
+                    bt_lb = bt_bounds[0]
+                    bt_ub = bt_bounds[1]
+                    if existing_bound >= bt_lb and existing_bound <= bt_ub:
+                        other_bound = bt_lb
+                        break
+
+                # spacing was negative for new_lines
+                upper_spacing = np.abs(spacing)
+                line_above_idx, line_above = self._line_above(dim, other_bound)
+                lower_spacing = (
+                    line_above - self.mesh_lines[dim][line_above_idx - 1]
+                )
+                redo_lines = _lines_const_factor_in_bounds(
+                    line_above,
+                    existing_bound,
+                    lower_spacing,
+                    upper_spacing,
+                    dim,
+                    0,
+                    self.smooth[dim],
+                )
+                del self.mesh_lines[dim][line_above_idx + 1 : -num_lines]
+                self._add_lines_to_mesh(redo_lines, dim)
 
     def _ensure_pml_structure_uniform(self):
         """
