@@ -1,6 +1,6 @@
 from typing import List, Tuple, Optional
 from enum import Enum
-from bisect import bisect_left, insort_left
+from bisect import bisect_left, bisect_right, insort_left
 import numpy as np
 import scipy.optimize
 from CSXCAD.CSPrimitives import CSPrimitives
@@ -390,14 +390,15 @@ def _mesh_lines_in_box(
     """
     mesh_lines_inside = []
     for dim in [0, 1, 2]:
-        dim_mesh = []
-        lower_dim = box.min_corner[dim]
-        upper_dim = box.max_corner[dim]
-        for line in mesh_lines[dim]:
-            if line >= lower_dim and line <= upper_dim:
-                dim_mesh.append(line)
-
-        mesh_lines_inside.append(dim_mesh)
+        lower_pos = box.min_corner[dim]
+        upper_pos = box.max_corner[dim]
+        dim_lines = mesh_lines[dim]
+        dim_lines_inside = dim_lines[
+            bisect_left(dim_lines, lower_pos) : bisect_right(
+                dim_lines, upper_pos
+            )
+        ]
+        mesh_lines_inside.append(dim_lines_inside)
 
     return mesh_lines_inside
 
@@ -540,6 +541,7 @@ class Mesh:
         """
         pml_boxes = self.pml_boxes()
         for i, box in enumerate(pml_boxes):
+            box.set_increasing()
             if box.has_zero_dim():
                 continue
             dim = i // 2
