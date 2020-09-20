@@ -272,6 +272,45 @@ def _geom_series(
     return (factor, num)
 
 
+def _lines_const_factor_in_bounds(
+    lower: float,
+    upper: float,
+    lower_spacing: float,
+    upper_spacing: float,
+    dim: int,
+    min_lines: int,
+    smooth: float,
+) -> np.array:
+    """
+    """
+    if np.isclose(lower_spacing, upper_spacing):
+        num_lines = int(np.ceil((upper - lower) / lower_spacing)) + 1
+        num_lines = int(np.max([num_lines, min_lines]))
+        return np.linspace(lower, upper, num_lines)
+
+    (factor, num_lines) = _geom_series(
+        smaller_spacing=np.min([lower_spacing, upper_spacing]),
+        larger_spacing=np.max([lower_spacing, upper_spacing]),
+        dist=upper - lower,
+        min_num=min_lines,
+        max_factor=smooth,
+    )
+
+    powers = np.arange(1, num_lines, 1)
+    if lower_spacing < upper_spacing:
+        spacings = lower_spacing * np.power(factor, powers)
+        lines = np.array(lower + np.cumsum(spacings))
+        lines = np.concatenate(([lower], lines))
+    else:
+        spacings = upper_spacing * np.power(factor, powers)
+        lines = np.array(upper - np.cumsum(spacings))
+        lines = np.concatenate(([upper], lines))
+        lines = np.flip(lines)
+
+    lines[-1] = upper  # last line should be exactly equal to upper
+    return lines
+
+
 def _spacing_at_dist(spacing: float, dist: float, max_factor: float) -> float:
     """
     """
@@ -1298,44 +1337,6 @@ class Mesh:
 
         return False
 
-    def _lines_const_factor_in_bounds(
-        self,
-        lower: float,
-        upper: float,
-        lower_spacing: float,
-        upper_spacing: float,
-        dim: int,
-        min_lines: int,
-    ) -> np.array:
-        """
-        """
-        if np.isclose(lower_spacing, upper_spacing):
-            num_lines = int(np.ceil((upper - lower) / lower_spacing)) + 1
-            num_lines = int(np.max([num_lines, min_lines]))
-            return np.linspace(lower, upper, num_lines)
-
-        (factor, num_lines) = _geom_series(
-            smaller_spacing=np.min([lower_spacing, upper_spacing]),
-            larger_spacing=np.max([lower_spacing, upper_spacing]),
-            dist=upper - lower,
-            min_num=min_lines,
-            max_factor=self.smooth[dim],
-        )
-
-        powers = np.arange(1, num_lines, 1)
-        if lower_spacing < upper_spacing:
-            spacings = lower_spacing * np.power(factor, powers)
-            lines = np.array(lower + np.cumsum(spacings))
-            lines = np.concatenate(([lower], lines))
-        else:
-            spacings = upper_spacing * np.power(factor, powers)
-            lines = np.array(upper - np.cumsum(spacings))
-            lines = np.concatenate(([upper], lines))
-            lines = np.flip(lines)
-
-        lines[-1] = upper  # last line should be exactly equal to upper
-        return lines
-
     def _gen_lines_in_bounds(
         self,
         lower: float,
@@ -1356,8 +1357,14 @@ class Mesh:
             or _spacing_at_dist(smaller_spacing, dist, self.smooth[dim])
             < larger_spacing
         ):
-            return self._lines_const_factor_in_bounds(
-                lower, upper, lower_spacing, upper_spacing, dim, self.min_lines
+            return _lines_const_factor_in_bounds(
+                lower,
+                upper,
+                lower_spacing,
+                upper_spacing,
+                dim,
+                self.min_lines,
+                self.smooth[dim],
             )
 
         mid_spacing_dist = _dist_for_max_spacings(
@@ -1382,11 +1389,23 @@ class Mesh:
             lower_num += 1
             upper_num += 1
 
-        lines_lower = self._lines_const_factor_in_bounds(
-            lower, midpt, lower_spacing, mid_spacing, dim, lower_num
+        lines_lower = _lines_const_factor_in_bounds(
+            lower,
+            midpt,
+            lower_spacing,
+            mid_spacing,
+            dim,
+            lower_num,
+            self.smooth[dim],
         )
-        lines_upper = self._lines_const_factor_in_bounds(
-            midpt, upper, mid_spacing, upper_spacing, dim, upper_num
+        lines_upper = _lines_const_factor_in_bounds(
+            midpt,
+            upper,
+            mid_spacing,
+            upper_spacing,
+            dim,
+            upper_num,
+            self.smooth[dim],
         )
         lines = np.concatenate([lines_lower, lines_upper])
 
