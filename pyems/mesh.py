@@ -13,7 +13,13 @@ from pyems.csxcad import (
     add_line,
     construct_box,
     add_material,
-    csxcad_nearest,
+    fp_equalp,
+    fp_nearest,
+    fp_equalp,
+    fp_ltp,
+    fp_gtp,
+    fp_lep,
+    fp_gep,
 )
 from pyems.priority import priorities
 
@@ -624,19 +630,28 @@ class Mesh:
                 )
 
             # only smooth lines if necessary
-            if np.isclose(spacing, limit_spacing):
+            if np.isclose(spacing, limit_spacing, rtol=1e-3, atol=0):
                 continue
 
-            del self.mesh_lines[dim][idx_lower:idx_upper]
             if is_lower_bound:
                 init_pos = lines[0]
             else:
                 init_pos = lines[-1]
                 spacing *= -1
-
             new_lines = sorted(
                 [init_pos + i * spacing for i in range(num_lines)]
             )
+            # only clear lines in the new range because we will have
+            # to generate new lines between the border of this new
+            # line boundary and the nearest BoundedType border. The
+            # line closest to the BoundedType border is preserved
+            # (either below or above if this is the lower PML or upper
+            # PML, respectively) so that thirds rule and other such
+            # sensitive spacings are preserved. If we clear lines
+            # based on the old line range we run the risk of clearing
+            # that nearest line.
+            self._clear_mesh_in_bounds(new_lines[0], new_lines[-1], dim)
+
             self._add_lines_to_mesh(new_lines, dim)
 
             if is_lower_bound:
@@ -716,7 +731,7 @@ class Mesh:
             for pos1 in lines[non_dim1]:
                 for pos2 in lines[non_dim2]:
                     prop = self.sim.csx.GetPropertyByCoordPriority(
-                        csxcad_nearest(
+                        fp_nearest(
                             c3_from_dim(
                                 dim, (dim_lines[0], pos1, pos2)
                             ).coordinate_list()
@@ -724,7 +739,7 @@ class Mesh:
                     )
                     for dim_pos in dim_lines[1:]:
                         dim_prop = self.sim.csx.GetPropertyByCoordPriority(
-                            csxcad_nearest(
+                            fp_nearest(
                                 c3_from_dim(
                                     dim, (dim_pos, pos1, pos2)
                                 ).coordinate_list()
@@ -1124,8 +1139,8 @@ class Mesh:
         :param upper: Upper position.
         :param dim: is the dimension: 0, 1, 2 for x, y, or z.
         """
-        lower_idx, _ = self.nearest_mesh_line(dim, lower)
-        upper_idx, _ = self.nearest_mesh_line(dim, upper)
+        lower_idx, _ = self._line_above_inc(dim, lower)
+        upper_idx, _ = self._line_below_inc(dim, upper)
         upper_idx += 1
         del self.mesh_lines[dim][lower_idx:upper_idx]
 
@@ -1149,12 +1164,32 @@ class Mesh:
         if act_pos is None:
             return (None, None)
 
-        if np.isclose(act_pos, pos):
+        if fp_equalp(act_pos, pos):
             idx -= 1
             if self._mesh_valid_index(dim, idx):
                 act_pos = self.get_mesh_line(dim, idx)
 
-        if act_pos < pos:
+        if fp_ltp(act_pos, pos):
+            return (idx, act_pos)
+
+        idx -= 1
+        if self._mesh_valid_index(dim, idx):
+            act_pos = self.get_mesh_line(dim, idx)
+            return (idx, act_pos)
+
+        return (None, None)
+
+    def _line_below_inc(self, dim: int, pos: float) -> Tuple[int, float]:
+        """
+        Return the index and position of the nearest line at or below
+        the provided one.  This differs from ``_line_below`` in that
+        ``_line_below`` is not inclusive.
+        """
+        (idx, act_pos) = self.nearest_mesh_line(dim, pos)
+        if act_pos is None:
+            return (None, None)
+
+        if fp_lep(act_pos, pos):
             return (idx, act_pos)
 
         idx -= 1
@@ -1173,12 +1208,32 @@ class Mesh:
         if act_pos is None:
             return (None, None)
 
-        if np.isclose(act_pos, pos):
+        if fp_equalp(act_pos, pos):
             idx += 1
             if self._mesh_valid_index(dim, idx):
                 act_pos = self.get_mesh_line(dim, idx)
 
-        if act_pos > pos:
+        if fp_gtp(act_pos, pos):
+            return (idx, act_pos)
+
+        idx += 1
+        if self._mesh_valid_index(dim, idx):
+            act_pos = self.get_mesh_line(dim, idx)
+            return (idx, act_pos)
+
+        return (None, None)
+
+    def _line_above_inc(self, dim: int, pos: float) -> Tuple[int, float]:
+        """
+        Return the index and position of the nearest line at or above
+        the provided one.  This differs from ``_line_above`` in that
+        ``_line_above`` is not inclusive.
+        """
+        (idx, act_pos) = self.nearest_mesh_line(dim, pos)
+        if act_pos is None:
+            return (None, None)
+
+        if fp_gep(act_pos, pos):
             return (idx, act_pos)
 
         idx += 1
