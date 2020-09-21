@@ -221,6 +221,15 @@ def _factor_ubound(num: int, ratio: float, max_factor: float) -> float:
 
 def _geom_dist(factor: float, num: int, smaller_spacing: float) -> float:
     """
+    Total distance spanned by a geometric series where each item in
+    the series corresponds to a distance.
+
+    :param factor: The factor between successive terms in the series.
+    :param num: Number of terms in the series.
+    :param smaller_spacing: The initial spacing.  The first term of
+        the geometric series is equal to this term times the factor.
+
+    :returns: Sum of the geometric series.
     """
     powers = np.arange(1, num, 1)
     dist = smaller_spacing * np.sum(np.power(factor, powers))
@@ -231,6 +240,8 @@ def _geom_dist_zero(
     factor: float, num: int, smaller_spacing: float, dist: float
 ) -> float:
     """
+    Difference between a geometric distance (see ``_geom_dist``) and a
+    provided distance.
     """
     return _geom_dist(factor, num, smaller_spacing) - dist
 
@@ -239,8 +250,16 @@ def _num_for_factor(
     factor: float, smaller_spacing: float, dist: float
 ) -> (float, int):
     """
-    Find the closest number for a given factor and return that number
-    and associated factor.
+    Find the closest number of terms in a geometric series with a
+    given factor such that the sum of the geometric series equals
+    ``dist``.
+
+    :param factor: The geometric series factor.
+    :param smaller_spacing:
+    :param dist: Desired sum of the geometric series.
+
+    :returns: An adjusted factor and associated number of terms such
+              that the desired sum is exactly matched.
     """
     num = int(
         np.ceil(
@@ -250,6 +269,14 @@ def _num_for_factor(
         )
     )
     factor = _factor_for_num(num, smaller_spacing, dist)
+
+    # Prevent factor from falling below 1.
+    while factor < 1:
+        num -= 1
+        if num == 0:
+            raise RuntimeError("_num_for_factor failed. This is a bug.")
+        factor = _factor_for_num(num, smaller_spacing, dist)
+
     return (factor, num)
 
 
@@ -261,8 +288,16 @@ def _geom_series(
     max_factor: float,
 ) -> (float, int):
     """
-    Compute a geometric series that specifies the spacing between a
-    series of lines.
+    Geometric series for a given sum and subject to a minimum number
+    of terms and max factor constraints.
+
+    :param dist: Desired sum of geometric series.
+    :param min_num: Minimum number of terms in the series.
+    :param max_factor: Maximum factor between successive terms in the
+        series.
+
+    :returns: Computed factor and number of terms satisfying the
+              constraints.
     """
     num = np.max([int(np.ceil(dist / larger_spacing)) + 1, min_num])
     factor = _factor_for_num(num, smaller_spacing, dist)
@@ -286,6 +321,8 @@ def _lines_const_factor_in_bounds(
 ) -> np.array:
     """
     """
+    # If the lower and upper spacings are roughly equal, make the
+    # lines equidistant.
     if np.isclose(lower_spacing, upper_spacing, rtol=1e-3, atol=0):
         num_lines = int(np.ceil((upper - lower) / lower_spacing)) + 1
         num_lines = int(np.max([num_lines, min_lines]))
@@ -316,6 +353,17 @@ def _lines_const_factor_in_bounds(
 
 def _spacing_at_dist(spacing: float, dist: float, max_factor: float) -> float:
     """
+    The spacing a specified distance away for a given initial spacing
+    and maximum factor.
+
+    :param spacing: The initial spacing.  The computed factor
+        successively increases the spacing from this value.
+    :param dist: A distance away from the current location.  This
+        constrains the geometric series.
+    :param max_factor: The maximum permissible factor in the geometric
+        series.
+
+    :returns: The spacing ``dist`` away from the current location.
     """
     factor, num = _num_for_factor(max_factor, spacing, dist)
     return spacing * (factor ** (num - 1))
@@ -340,7 +388,10 @@ def _dist_for_max_spacings(
 ) -> float:
     """
     Compute the distance from a lower bound such that the last spacing
-    from the upper bound and lower bound are equal.
+    from the upper bound and lower bound are equal.  This finds a sort
+    of midpoint of a total distance ``dist`` where the spacings become
+    the same, subject to the constraint that the factors of the lower
+    and upper geometric series are less than some maximum factor.
     """
     roots = scipy.optimize.fsolve(
         func=_spacings_at_dist_zero,
@@ -354,7 +405,7 @@ def _dist_for_max_spacings(
 def _pos_in_bounds(pos: float, lower: float, upper: float) -> bool:
     """
     """
-    if pos >= lower and pos <= upper:
+    if fp_gep(pos, lower) and fp_lep(pos, upper):
         return True
     return False
 
@@ -576,7 +627,63 @@ class Mesh:
         if show_pml:
             self._show_pml(self.pml_boxes())
         self.sim.post_mesh()
+
+        # ensure mesh smoothness
+        self._check_pml_mesh_uniform()
+        self._check_mesh_smooth()
+
         self._ensure_pml_structure_uniform()
+
+    def _check_pml_mesh_uniform(self):
+        """
+        Ensure mesh inside PML has uniform spacing.
+        """
+        pml_boxes = self.pml_boxes()
+        for i, box in enumerate(pml_boxes):
+            if box.has_zero_dim():
+                continue
+            dim = i // 2
+            lines = _mesh_lines_in_box(self.mesh_lines, box)[dim]
+            last_spacing = lines[1] - lines[0]
+            for j in range(2, len(lines)):
+                spacing = lines[j] - lines[j - 1]
+                if not fp_equalp(spacing, last_spacing):
+                    raise RuntimeError(
+                        "PML mesh lines not uniform. This is a pyems bug."
+                    )
+
+    def _check_mesh_smooth(self):
+        """
+        Ensure mesh smoothness adhered to.
+        """
+        for dim in range(3):
+            lines = self.mesh_lines[dim]
+            smoothness = self.smooth[dim]
+            last_spacing = lines[1] - lines[0]
+            for i in range(2, len(lines)):
+                spacing = lines[i] - lines[i - 1]
+                factor = np.maximum(
+                    spacing / last_spacing, last_spacing / spacing
+                )
+                if not factor < smoothness:
+                    warn(
+                        (
+                            "Mesh line at pos {:.4f} for dimension {} violates "
+                            "smoothness. Smoothness was set to {:.2f} but this "
+                            "line creates a spacing with factor {:.2f}. For "
+                            "convenience the last three lines are: {:.4f}, "
+                            "{:.4f} and {:.4f}."
+                        ).format(
+                            lines[i],
+                            dim,
+                            smoothness,
+                            factor,
+                            lines[i - 2],
+                            lines[i - 1],
+                            lines[i],
+                        )
+                    )
+                last_spacing = spacing
 
     def _smooth_pml_mesh_lines(self):
         """
@@ -588,7 +695,6 @@ class Mesh:
         for i, box in enumerate(pml_boxes):
             if box.has_zero_dim():
                 continue
-            box.set_increasing()
             dim = i // 2
             is_lower_bound = i % 2 == 0
             lines = _mesh_lines_in_box(self.mesh_lines, box)[dim]
@@ -918,6 +1024,10 @@ class Mesh:
                 ),
             )
         )
+
+        for box in boxes:
+            box.set_increasing()
+
         return tuple(boxes)
 
     def add_line_manual(self, dim: int, pos: float) -> None:
@@ -1409,11 +1519,17 @@ class Mesh:
                 if self._is_metal_bound(dim, lower):
                     rebuild_lines = True
                     first_spacing = lines[1] - lines[0]
-                    lower += 2 * first_spacing / 3
+                    # The metal side will use metal_res so we must use
+                    # that too.
+                    spacing = np.min([first_spacing, self.metal_res])
+                    lower_spacing = self.metal_res
+                    lower += 2 * spacing / 3
                 if self._is_metal_bound(dim, upper):
                     rebuild_lines = True
                     last_spacing = lines[-1] - lines[-2]
-                    upper -= 2 * last_spacing / 3
+                    spacing = np.min([last_spacing, self.metal_res])
+                    upper_spacing = self.metal_res
+                    upper -= 2 * spacing / 3
                 if rebuild_lines:
                     lines = self._gen_lines_in_bounds(
                         lower,
@@ -1457,11 +1573,28 @@ class Mesh:
         dim: int,
     ) -> np.array:
         """
+        Generate a list of lines within specified boundary positions
+        for a provided dimension.
+
+        :param lower: Lower boundary position.
+        :param upper: Upper boundary position.
+        :param lower_spacing: Spacing between lines adjacent to the
+            lower boundary.
+        :param upper_spacing: Spacing between lines adjacent to the
+            upper boundary.
+        :param dim: Dimension. 0, 1, or 2 for x, y, or z.
         """
         dist = upper - lower
         smaller_spacing = np.min([lower_spacing, upper_spacing])
         larger_spacing = np.max([lower_spacing, upper_spacing])
         num_lower = dist / larger_spacing
+
+        # When the spacing in the current region must be smaller than
+        # the spacings imposed by the boundaries, or the spacing in
+        # the region will not be able to increase enough from the
+        # smaller spacing to the larger spacing, compute the lines for
+        # the whole region directly. The first case happens when the
+        # minimum number of lines constrains the spacing.
         if (
             num_lower < self.min_lines
             or _spacing_at_dist(smaller_spacing, dist, self.smooth[dim])
@@ -1477,6 +1610,15 @@ class Mesh:
                 self.smooth[dim],
             )
 
+        # Break the region up into two subregions based on a "midpoint"
+        # computed where the spacings can be the same (see
+        # ``_dist_for_max_spacings``). We also handle the case where
+        # the spacings at each boundary are the same here rather than
+        # as a single region in the previous conditional. The reason
+        # is that it is generally possible to increase and then
+        # decrease the spacing such that the boundary spacings are
+        # still satisfied, but fewer mesh lines are used in the
+        # region. Visually: | | |  |   |   |  | | |
         mid_spacing_dist = _dist_for_max_spacings(
             lower_spacing, upper_spacing, dist, self.smooth[dim]
         )
@@ -1683,14 +1825,18 @@ class Mesh:
         self, bounded_types: List[List[BoundedType]]
     ) -> None:
         """
-        Set the metal boundaries based on the bounded types.
+        Set the metal boundaries based on the bounded types.  Ignore
+        zero-length metals, which aren't metal bounds which require
+        adherance to the thirds rule.
         """
         for dim, btypes in enumerate(bounded_types):
             for btype in btypes:
                 if btype.get_type() == Type.metal:
                     bounds = btype.get_bounds()
-                    self._add_metal_bound(dim, bounds[0])
-                    self._add_metal_bound(dim, bounds[1])
+                    # Ignore zero-length metals.
+                    if not fp_equalp(bounds[0], bounds[1]):
+                        self._add_metal_bound(dim, bounds[0])
+                        self._add_metal_bound(dim, bounds[1])
 
             self.metal_bounds[dim] = _remove_dups(
                 self.metal_bounds[dim], self.fixed_lines[dim]
