@@ -26,6 +26,7 @@
             pythonEnv
           ] ++ (with pkgs; [
             paraview
+            appcsxcad
           ]);
         };
     };
