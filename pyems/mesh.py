@@ -603,13 +603,8 @@ class Mesh:
         """
         Autogenerate a mesh given the CSX structure.
 
-        :param enforce_thirds: Enforce thirds rule for metal
-            boundaries.  This should always be enabled unless you want
-            to debug the mesh generation.
-        :param smooth: Smooth mesh lines so that adjacent separations
-            do not differ by more than the smoothness factor.  This
-            should always be enabled unless you want to debug the mesh
-            generation.
+        :param show_pml: Add boxes to display the location of the PML.
+            These boxes do not affect the simulation.
         """
         prims = self.sim.csx.GetAllPrimitives()
         physical_prims = _physical_prims(prims)
