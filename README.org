@@ -624,9 +624,3 @@ class. The interface must be changed in some way that is also
 compatible with the derived classes.
 
 ** HOLD mesh should support primitive priorities
-** HOLD mesh option to ignore very small structures
-This is useful when your model inadvertently creates tiny structures
-(i.e. two overlapping objects are almost the same size) that would
-increase the simulation time dramatically. To not screw up mesh
-generation, this will need to merge these BoundedType's with the
-adjacent (smallest?) BoundedType.
