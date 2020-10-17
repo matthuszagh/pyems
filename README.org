@@ -3,6 +3,7 @@
 2. [[https://github.com/matthuszagh/pyems#installation][Installation]]
 3. [[https://github.com/matthuszagh/pyems#tutorial][Tutorial]]
 4. [[https://github.com/matthuszagh/pyems#usage][Usage]]
+5. [[https://github.com/matthuszagh/pyems#automatic-mesh-generation-algorithm][Automatic Mesh Generation Algorithm]]
 
 * About
 Pyems is a Python interface to the electromagnetic field solver,
@@ -514,6 +515,65 @@ object is first created at the origin, then the transform is applied,
 finally followed by a translation of the center of the structure to
 the supplied position. As a result translation transformations should
 not be needed, although pyems will accept them.
+
+* Automatic Mesh Generation Algorithm
+This section describes how the automatic mesh generation algorithm
+works. Although I intend to keep it up to date, since the mesher is
+still evolving this description may at times lag behind
+development. If you find an inconsistency, please submit an issue.
+
+In order to generate a mesh from a CSXCAD geometry, pyems starts by
+getting a list of all physical CSXCAD primitives (i.e., CSXCAD
+primitives that have an effect on the simulation). Then, for each
+dimension it extracts a list of locations for mesh lines that must be
+fixed at those locations. These correspond to zero-dimension
+structures (e.g., a planar structure created by
+~AddConductingSheet~). Next, pyems iterates through the full list of
+physical primitives and extracts 3 lists of boundary positions, one
+for each dimension. For example, a boundary position in the
+x-dimension would correspond to a location where the physical
+properties of the structure change anywhere at that location. This
+change could occur in the y-dimension or the z-dimension. Boundary
+positions in the y-dimension and z-dimension lists are analogous.
+
+Pyems then converts these lists of boundary positions in each
+dimension to a type that associates a boundary region (consisting of
+lower and upper bounds) with a CSXCAD property type, which it
+classifies as metal, nonmetal or air. This is called a
+~BoundedType~. To associate the property type it finds the type of the
+primitive corresponding to the smallest length in that dimension
+encompassing the bounded region. Where ties exist, the metal type gets
+priority. There is still at least one issue with this part of the
+process, which I will fix (e.g., see [[https://github.com/matthuszagh/pyems/issues/2][issue #2]]).
+
+Pyems then adds peripheral ~BoundedType~'s for simulation air space,
+records the location of boundaries between a metal, and nonmetal and
+orders the ~BoundedType~'s by size (smallest first). Then, it iterates
+through this list of ~BoundedType~'s and generates a list of mesh line
+locations inside each.
+
+Generating this list of mesh lines in each ~BoundedType~ is, of
+course, where most of the work happens. Pyems starts by finding the
+mesh line spacing at the lower and upper boundaries of the boundary
+region. It also determines the maximum spacing in this region
+according to ~metal_res~ and ~nonmetal_res~ specified by the user and
+whether this ~BoundedType~ is a metal or not. Then it adjusts the
+upper and lower line positions if they correspond to metal-nonmetal
+boundaries, which must satisfy the thirds rule. For instance, if the
+upper boundary position corresponds to a metal-nonmetal boundary, we
+would move the upper position 1/3 the mesh spacing inside the
+boundary. Then pyems computes a geometric series whose constant factor
+is between 1 and the smoothness factor specified by the user for that
+dimension and whose distance is equal to the distance of the bounded
+region. Computing the geometric series uses a Scipy optimization
+routine and accounts for most of the time spent generating the mesh.
+
+Finally, pyems trims the air mesh to the desired number of cells,
+smooths the mesh so that the mesh spacing inside the PML is uniform,
+calls hooks to other parts of pyems that need to know the final mesh
+location (e.g., probes need to align to the mesh), and generates the
+actual mesh in the CSXCAD structure. It then performs a number of
+checks for correctness.
 
 * Planned Features
 The following set of features is planned, but not currently
