@@ -536,10 +536,10 @@ properties of the structure change anywhere at that location. This
 change could occur in the y-dimension or the z-dimension. Boundary
 positions in the y-dimension and z-dimension lists are analogous.
 
-Pyems then converts these lists of boundary positions in each
-dimension to a type that associates a boundary region (consisting of
-lower and upper bounds) with a CSXCAD property type, which it
-classifies as metal, nonmetal or air. This is called a
+Pyems then converts each element of these lists of boundary positions
+in each dimension to a type that associates a boundary region
+(consisting of lower and upper bounds) with a CSXCAD property type,
+which it classifies as metal, nonmetal or air. This is called a
 ~BoundedType~. To associate the property type it finds the type of the
 primitive corresponding to the smallest length in that dimension
 encompassing the bounded region. Where ties exist, the metal type gets
