@@ -262,10 +262,10 @@ class Simulation:
             self.ports[i].reflected_voltage()
             / self.ports[j].incident_voltage()
         )
-        s = np.abs(s)
         if not dB:
             return s
         else:
+            s = np.abs(s)
             return 20 * np.log10(s)
 
     def _num_ports(self) -> int:
