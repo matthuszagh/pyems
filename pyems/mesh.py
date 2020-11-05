@@ -1464,6 +1464,9 @@ class Mesh:
         if lower == upper:
             self._add_lines_to_mesh([lower], dim)
         else:
+            # TODO why do we need to generate these lines first and
+            # then use first_spacing and last_spacing instead of
+            # lower_spacing and upper_spacing?
             lines = self._gen_lines_in_bounds(
                 lower, upper, lower_spacing, upper_spacing, max_spacing, dim
             )
