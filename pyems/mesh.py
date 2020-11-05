@@ -873,9 +873,12 @@ class Mesh:
             if upper_pml_cells > 0:
                 pos = self._highest_nonair_pos(dim)
                 mesh_idx, _ = self._line_above(dim, pos)
-                if len(self.mesh_lines[dim]) - mesh_idx > upper_pml_cells:
+                if len(self.mesh_lines[dim]) - 1 - mesh_idx > upper_pml_cells:
                     del_num = (
-                        len(self.mesh_lines[dim]) - mesh_idx - upper_pml_cells
+                        len(self.mesh_lines[dim])
+                        - 1
+                        - mesh_idx
+                        - upper_pml_cells
                     )
                     del self.mesh_lines[dim][-del_num:]
 
