@@ -1517,13 +1517,11 @@ class Mesh:
                     # The metal side will use metal_res so we must use
                     # that too.
                     spacing = np.min([first_spacing, self.metal_res])
-                    lower_spacing = self.metal_res
                     lower += 2 * spacing / 3
                 if self._is_metal_bound(dim, upper):
                     rebuild_lines = True
                     last_spacing = lines[-1] - lines[-2]
                     spacing = np.min([last_spacing, self.metal_res])
-                    upper_spacing = self.metal_res
                     upper -= 2 * spacing / 3
                 if rebuild_lines:
                     lines = self._gen_lines_in_bounds(
