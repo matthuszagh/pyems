@@ -116,6 +116,15 @@ class NF2FF:
         verbose: int = 1,
     ):
         """
+        :param theta: Elevation (altitude) angle in degrees, which
+            must be in the range [-90,90].  An angle of 0 degrees
+            points along the positive z-axis.  This parameter is an
+            array where each value is an angle to test.
+        :param phi: Azimuth angle in degrees, which must be in the
+            range [0,360].  A value of 0 degrees points along the
+            positive x-axis.  A value between 0 and 90 degrees points
+            between the positive x- and y-axes.  This parameter is an
+            array where each value is an angle to test.
         """
         self._theta = theta
         self._phi = phi
