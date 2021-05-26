@@ -1728,6 +1728,12 @@ class Taper(Structure):
         :param width2: Rightmost width.
         :param length: Taper length.  The width of the taper
             increases/decreases linearly along the length.
+        :param rotation: Rotation about the normal axis.  A positive
+            value performs a rotation in the counterclockwise
+            direction whereas a negative value performs a rotation in
+            the clockwise direction.  This performs a rotation without
+            suffering the floating point precision affects of general
+            transformations in OpenEMS (see the documentation).
         :param gap: Distance between taper and surrounding coplanar
             ground plane.  If gap is set to None, no gap is used.
             Ensure coplanar copper pour is removed if this is used.
@@ -1736,8 +1742,8 @@ class Taper(Structure):
         self._pcb = pcb
         self._position = c2_maybe_tuple(position)
         tr = CSTransform()
-        tr.AddTransform("Rotate", "z", rotation)
-        self._rotation = rotation
+        tr.AddTransform("RotateAxis", "z", rotation)
+        self._rotation = tr
         self._pcb_layer = pcb_layer
         self._width1 = width1
         self._width2 = width2
