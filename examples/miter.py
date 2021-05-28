@@ -15,7 +15,6 @@ pcb_prop = common_pcbs["oshpark4"]
 pcb_len = 10
 trace_width = 0.38
 gap = mil_to_mm(6)
-via_gap = 0.4
 
 pcb = PCB(
     sim=sim, pcb_prop=pcb_prop, length=pcb_len, width=pcb_len, layers=range(3)
@@ -48,11 +47,9 @@ Microstrip(
     trace_layer=0,
     gnd_layer=1,
     gnd_gap=(gap, gap),
-    via_gap=(via_gap, via_gap),
-    via=None,
-    shorten_via_wall=(0, gap + via_gap - miter.inset_length()),
     port_number=1,
     feed_shift=0.4,
+    ref_impedance=50,
     excite=True,
 )
 
@@ -71,10 +68,8 @@ Microstrip(
     trace_layer=0,
     gnd_layer=1,
     gnd_gap=(gap, gap),
-    via_gap=(via_gap, via_gap),
-    via=None,
-    shorten_via_wall=(0, gap + via_gap - miter.inset_length()),
     port_number=2,
+    ref_impedance=50,
     excite=False,
 )
 

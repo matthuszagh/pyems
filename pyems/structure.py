@@ -8,6 +8,7 @@ cylindrical shell, air cylinder, circular pads, etc.
 from abc import ABC, abstractmethod
 from typing import List, Tuple
 from warnings import warn
+from copy import deepcopy
 import numpy as np
 from CSXCAD.CSTransform import CSTransform
 from CSXCAD.CSProperties import CSProperties
@@ -2077,7 +2078,7 @@ class Miter(Structure):
             color=colors["soldermask"],
         )
         construct_polygon(
-            prop=prop,
+            prop=gap_prop,
             points=self._gap_points(),
             elevation=self.pcb.copper_layer_elevation(self._pcb_layer),
             normal=Axis("z"),
@@ -2116,21 +2117,28 @@ class Miter(Structure):
         """
         inset_len = self.inset_length()
         gap_points = [deepcopy(coord) for coord in self._trace_points()]
+
+        # points start from upper left and proceed counter-clockwise
+        gap_points[0].x += 0
         gap_points[0].y += self._gap
-        gap_points[1].y -= inset_len
-        gap_points[2].x += self._trace_width + self._gap
-        gap_points[2].y -= inset_len
-        gap_points[3].x += self._gap
-        gap_points[3].y += self._gap / np.sqrt(2)
-        gap_points[4].x += (
-            -inset_len - self._trace_width + self._gap / np.sqrt(2)
-        )
-        gap_points[4].y += self._trace_width + inset_len + self._gap
+
+        gap_points[1].x += 0
+        gap_points[1].y -= min(inset_len, self._gap)
+
+        gap_points[2].x -= min(inset_len, self._gap)
+        gap_points[2].y -= min(inset_len, self._gap)
+
+        gap_points[3].x -= min(inset_len, self._gap)
+        gap_points[3].y += 0
+
+        gap_points[4].x += self._gap
+        gap_points[4].y += 0
 
         return gap_points
 
     def overlap_length(self) -> float:
         """
+        TODO
         """
         corner_len = self.corner_length()
         if self._miter > corner_len:
@@ -2139,6 +2147,19 @@ class Miter(Structure):
 
     def inset_length(self) -> float:
         """
+        The "inset" length is the length of one of the inner edges, as
+        shown in the diagram below.
+
+                          *
+                          * *
+                          *   *
+                          *     *
+                          *       *
+                          *******   *
+                          <---->*     *
+                                *       *
+                                * * * * * *
+
         """
         return self._trace_width - self.overlap_length()
 
