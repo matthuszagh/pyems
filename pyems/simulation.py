@@ -162,6 +162,15 @@ class Simulation:
 
     def run(self, csx: bool = True, debug_pec: bool = False) -> None:
         """
+        Run simulation.
+
+        :param csx: View the CSXCAD structure before running the
+            simulation.  This additionally prompts the user as to
+            whether they'd like to continue with the simulation after
+            viewing the simulation structure.
+        :param debug_pec: Dump a file containing information about the
+            PECs (perfect electrical conductors).  This file can be
+            viewed with Paraview.
         """
         if csx:
             self.view_csx(prompt=True)
