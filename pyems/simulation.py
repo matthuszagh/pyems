@@ -108,59 +108,52 @@ class Simulation:
 
     @property
     def freq(self) -> np.array:
-        """
-        """
+        """"""
         return self._freq
 
     @property
     def unit(self) -> float:
-        """
-        """
+        """"""
         return self._unit
 
     @property
     def csx(self) -> ContinuousStructure:
-        """
-        """
+        """"""
         return self._csx
 
     @property
     def fdtd(self) -> openEMS:
-        """
-        """
+        """"""
         return self._fdtd
 
     @property
     def boundary_conditions(self) -> BoundaryConditions:
-        """
-        """
+        """"""
         return self._boundary_conditions
 
     @property
     def ports(self):
-        """
-        """
+        """"""
         return self._ports
 
     @property
     def mesh(self):
-        """
-        """
+        """"""
         return self._mesh
 
     @property
     def sim_dir(self):
-        """
-        """
+        """"""
         return self._sim_dir
 
     @property
     def nf2ff(self):
-        """
-        """
+        """"""
         return self._nf2ff
 
-    def run(self, csx: bool = True, debug_pec: bool = False) -> None:
+    def run(
+        self, csx: bool = True, debug_pec: bool = False, threads: int = 0
+    ) -> None:
         """
         Run simulation.
 
@@ -171,14 +164,23 @@ class Simulation:
         :param debug_pec: Dump a file containing information about the
             PECs (perfect electrical conductors).  This file can be
             viewed with Paraview.
+        :param threads: Number of threads to use for the simulation.
+            This uses the exact same interface as OpenEMS.  That is,
+            the default value of 0 uses the maximum number of threads
+            and any other number uses the number provided.
         """
         if csx:
             self.view_csx(prompt=True)
         if not self._calc_only:
             if debug_pec:
-                self.fdtd.Run(self.sim_dir, setup_only=True, debug_pec=True)
+                self.fdtd.Run(
+                    self.sim_dir,
+                    setup_only=True,
+                    debug_pec=True,
+                    numThreads=threads,
+                )
             else:
-                self.fdtd.Run(self.sim_dir, cleanup=False)
+                self.fdtd.Run(self.sim_dir, cleanup=False, numThreads=threads)
                 self._calc_ports()
 
     def view_csx(self, prompt: bool = False) -> None:
@@ -200,8 +202,7 @@ class Simulation:
         self._field_dumps[index].view()
 
     def _prompt_terminate(self) -> None:
-        """
-        """
+        """"""
         ans = input("Continue simulation (y/n)? ")
         ans = ans.lower()
         if ans == "n":
@@ -231,21 +232,18 @@ class Simulation:
                 )
 
     def save_csx(self, path: str = None):
-        """
-        """
+        """"""
         if path is None:
             path = self.sim_dir + "/" + self._file_name() + ".xml"
         self.csx.Write2XML(path)
         self._csx_path = path
 
     def _file_name(self):
-        """
-        """
+        """"""
         return os.path.splitext(os.path.basename(sys.argv[0]))[0]
 
     def _calc_ports(self):
-        """
-        """
+        """"""
         [port.calc() for port in self.ports]
 
     def s_param(self, i: int, j: int, dB: bool = True) -> np.array:
@@ -279,60 +277,49 @@ class Simulation:
             return 20 * np.log10(s)
 
     def _num_ports(self) -> int:
-        """
-        """
+        """"""
         return len(self.ports)
 
     def center_frequency(self) -> float:
-        """
-        """
+        """"""
         idx = int(len(self.freq) / 2)
         return self.freq[idx]
 
     @property
     def reference_frequency(self) -> float:
-        """
-        """
+        """"""
         return self._reference_frequency
 
     def half_bandwidth(self) -> float:
-        """
-        """
+        """"""
         return self.freq[-1] - self.center_frequency()
 
     def max_frequency(self) -> float:
-        """
-        """
+        """"""
         return self.center_frequency() + self.half_bandwidth()
 
     def add_port(self, port) -> None:
-        """
-        """
+        """"""
         self._ports.append(port)
         self._order_ports()
 
     def add_field_dump(self, field_dump) -> None:
-        """
-        """
+        """"""
         self._field_dumps.append(field_dump)
 
     def _order_ports(self) -> None:
-        """
-        """
+        """"""
         self._ports.sort(key=lambda port: port.number)
 
     def _align_ports_to_mesh(self) -> None:
-        """
-        """
+        """"""
         if self.ports is not None:
             [port.snap_to_mesh(mesh=self.mesh) for port in self.ports]
 
     def register_mesh(self, mesh) -> None:
-        """
-        """
+        """"""
         self._mesh = mesh
 
     def register_nf2ff(self, nf2ff) -> None:
-        """
-        """
+        """"""
         self._nf2ff = nf2ff
