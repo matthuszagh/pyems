@@ -20,7 +20,7 @@ visible.
 
 To accomplish this goal, pyems provides:
 1. Configurable, automatic mesh generation.
-2. [[https://kicad-pcb.org/][KiCad]] footprint creation.
+2. [[https://kicad.org/][KiCad]] footprint creation.
 3. Simple port impedance and S-parameter calculations.
 4. A collection of cooperative classes for building commonly-needed
    microwave structures (many of which are PCB-based).
