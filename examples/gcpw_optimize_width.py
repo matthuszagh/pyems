@@ -17,9 +17,9 @@ gap = mil_to_mm(6)
 via_gap = 0.4
 
 
-def gcpw(trace_width: float):
-    """
-    """
+def gcpw(trace_width):
+    """"""
+    trace_width = trace_width[0]
     sim = Simulation(freq=freq, unit=1e-3)
     pcb = PCB(
         sim=sim,
