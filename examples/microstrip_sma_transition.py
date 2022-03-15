@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+# This example requires a patched version of CSXCAD. The PR
+# implementing the intended behavior is available at
+# https://github.com/thliebig/CSXCAD/pull/15.
+
 import numpy as np
 from pyems.pcb import common_pcbs
 from pyems.structure import Microstrip, PCB, Coax, priorities
