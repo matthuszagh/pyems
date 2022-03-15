@@ -92,8 +92,7 @@ class Port(ABC):
 
     @property
     def sim(self) -> Simulation:
-        """
-        """
+        """"""
         return self._sim
 
     @property
@@ -370,8 +369,7 @@ class Port(ABC):
 
     @abstractmethod
     def propagation_axis(self) -> Axis:
-        """
-        """
+        """"""
         pass
 
     def _data_readp(self) -> bool:
@@ -457,23 +455,19 @@ class MicrostripPort(Port):
 
     @property
     def box(self) -> Box3:
-        """
-        """
+        """"""
         return self._box
 
     def propagation_axis(self) -> Axis:
-        """
-        """
+        """"""
         return self._propagation_axis
 
     def get_feed_shift(self) -> float:
-        """
-        """
+        """"""
         return self.feed_shift
 
     def _check_axes_perpendicular(self) -> None:
-        """
-        """
+        """"""
         if self._propagation_axis.axis == self._excitation_axis.axis:
             raise ValueError(
                 "Excitation and propagation axes must be perpendicular."
@@ -491,7 +485,9 @@ class MicrostripPort(Port):
         )
         box = self._trace_box()
         construct_box(
-            prop=trace_prop, box=box, priority=priorities["trace"],
+            prop=trace_prop,
+            box=box,
+            priority=priorities["trace"],
         )
 
     def _trace_box(self) -> Box3:
@@ -524,8 +520,7 @@ class MicrostripPort(Port):
         return self._excitation_axis.direction
 
     def _trace_perpendicular_axis(self) -> Axis:
-        """
-        """
+        """"""
         axes = [0, 1, 2]
         axes.remove(self._propagation_axis.axis)
         axes.remove(self._excitation_axis.axis)
@@ -677,8 +672,7 @@ class MicrostripPort(Port):
 
 
 class DifferentialMicrostripPort(Port):
-    """
-    """
+    """"""
 
     def __init__(
         self,
@@ -764,13 +758,11 @@ class DifferentialMicrostripPort(Port):
         self._set_traces()
 
     def propagation_axis(self) -> Axis:
-        """
-        """
+        """"""
         return self._propagation_axis
 
     def _set_traces(self) -> None:
-        """
-        """
+        """"""
         trace_prop = add_conducting_sheet(
             csx=self._sim.csx,
             name="Differential_Microstrip_Trace_" + str(self.number),
@@ -779,12 +771,13 @@ class DifferentialMicrostripPort(Port):
         )
         for box in self._trace_boxes():
             construct_box(
-                prop=trace_prop, box=box, priority=priorities["trace"],
+                prop=trace_prop,
+                box=box,
+                priority=priorities["trace"],
             )
 
     def _trace_boxes(self) -> Tuple[Box3, Box3]:
-        """
-        """
+        """"""
         lower_box = deepcopy(self._box)
         upper_box = deepcopy(self._box)
         excite_axis = self._excitation_axis.axis
@@ -800,8 +793,7 @@ class DifferentialMicrostripPort(Port):
         return (lower_box, upper_box)
 
     def _trace_width(self) -> float:
-        """
-        """
+        """"""
         box_width = (
             self._box.max_corner[self._excitation_axis.axis]
             - self._box.min_corner[self._excitation_axis.axis]
@@ -809,24 +801,21 @@ class DifferentialMicrostripPort(Port):
         return (box_width - self._gap) / 2
 
     def _normal_axis(self) -> Axis:
-        """
-        """
+        """"""
         axes = [0, 1, 2]
         axes.remove(self._propagation_axis.axis)
         axes.remove(self._excitation_axis.axis)
         return Axis(axes[0])
 
     def _check_axes_perpendicular(self) -> None:
-        """
-        """
+        """"""
         if self._propagation_axis.axis == self._excitation_axis.axis:
             raise ValueError(
                 "Excitation and propagation axes must be perpendicular."
             )
 
     def _check_normal_axis_size(self) -> None:
-        """
-        """
+        """"""
         normal_axis = self._normal_axis().axis
         if (
             self._box.max_corner[normal_axis]
@@ -1202,8 +1191,7 @@ class CPWPort(Port):
                 self.feeds.append(feed)
 
     def _get_feed_boxes(self, mesh: Mesh) -> None:
-        """
-        """
+        """"""
         _, xpos = mesh.nearest_mesh_line(
             0,
             self.box.min_corner.x
@@ -1343,14 +1331,12 @@ class RectWaveguidePort(Port):
         self._set_func()
 
     def propagation_axis(self) -> Axis:
-        """
-        """
+        """"""
         return self._propagation_axis
 
     @property
     def box(self) -> Box3:
-        """
-        """
+        """"""
         return self._box
 
     def calc(self):
@@ -1378,8 +1364,7 @@ class RectWaveguidePort(Port):
         self._calc_p_ref()
 
     def add_metal_shell(self, thickness: float) -> None:
-        """
-        """
+        """"""
         shell_prop = add_metal(csx=self._sim.csx, name="rect_wg_metal")
         back_face = self._shell_face_box(
             const_dim=self.propagation_axis().intval(),
@@ -1387,7 +1372,9 @@ class RectWaveguidePort(Port):
             thickness=thickness,
         )
         construct_box(
-            prop=shell_prop, box=back_face, priority=priorities["trace"],
+            prop=shell_prop,
+            box=back_face,
+            priority=priorities["trace"],
         )
         dims = list(range(3))
         del dims[self.propagation_axis().intval()]
@@ -1397,14 +1384,18 @@ class RectWaveguidePort(Port):
                     const_dim=dim, const_dim_idx=i, thickness=thickness
                 )
                 construct_box(
-                    prop=shell_prop, box=face, priority=priorities["trace"],
+                    prop=shell_prop,
+                    box=face,
+                    priority=priorities["trace"],
                 )
 
     def _shell_face_box(
-        self, const_dim: int, const_dim_idx: int, thickness: float,
+        self,
+        const_dim: int,
+        const_dim_idx: int,
+        thickness: float,
     ) -> Box3:
-        """
-        """
+        """"""
         box = Box3(
             Coordinate3(None, None, None), Coordinate3(None, None, None)
         )
@@ -1421,8 +1412,7 @@ class RectWaveguidePort(Port):
         return box
 
     def _dim_outer_dir(self, dim: int, dim_idx: int) -> int:
-        """
-        """
+        """"""
         other_dim_idx = (dim_idx + 1) % 2
         return np.sign(self.box[dim_idx][dim] - self.box[other_dim_idx][dim])
 
@@ -1471,8 +1461,7 @@ class RectWaveguidePort(Port):
         )
 
     def _set_func(self) -> None:
-        """
-        """
+        """"""
         ny_p = (self.propagation_axis().intval() + 1) % 3
         ny_pp = (self.propagation_axis().intval() + 2) % 3
 
@@ -1671,8 +1660,7 @@ class CoaxPort(Port):
         self._set_core()
 
     def _check_start_stop(self) -> None:
-        """
-        """
+        """"""
         diff = np.diff(
             [self._stop.coordinate_list(), self._start.coordinate_list()],
             axis=0,
@@ -1684,8 +1672,7 @@ class CoaxPort(Port):
             )
 
     def _propagation_axis(self) -> Axis:
-        """
-        """
+        """"""
         for i in range(3):
             if fp_equalp(self._start[i], self._stop[i]):
                 return Axis(i)
@@ -1703,25 +1690,24 @@ class CoaxPort(Port):
         return direction
 
     def _set_core(self) -> None:
-        """
-        """
+        """"""
         # TODO bug?? cylinder ignored if start > stop
         if not self._direction() == 1:
             start = self._stop
-            stop = self._start
+            self._stop = self._start
+            self._start = start
 
         core_prop = add_metal(csx=self.sim.csx, name=self._core_name())
         construct_cylinder(
             prop=core_prop,
-            start=start,
-            stop=stop,
+            start=self._start,
+            stop=self._stop,
             radius=self._core_radius,
             priority=priorities["trace"],
         )
 
     def propagation_axis(self) -> Axis:
-        """
-        """
+        """"""
         diff = np.diff(
             [self._stop.coordinate_list(), self._start.coordinate_list()],
             axis=0,
@@ -1739,8 +1725,7 @@ class CoaxPort(Port):
         return int(np.sign(self._stop[axis_int] - self._start[axis_int]))
 
     def _core_name(self) -> str:
-        """
-        """
+        """"""
         return "Coax_core_" + str(self.number)
 
     def _set_probes(self, mesh: Mesh) -> None:
