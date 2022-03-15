@@ -39,7 +39,6 @@ DifferentialMicrostrip(
     gap=trace_gap,
     propagation_axis=Axis("x"),
     gnd_gap=(gnd_gap, gnd_gap),
-    via_gap=(via_gap, via_gap),
     port_number=1,
     excite=True,
     ref_impedance=50,
