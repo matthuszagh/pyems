@@ -152,22 +152,22 @@ class Simulation:
         return self._nf2ff
 
     def run(
-        self, csx: bool = True, debug_pec: bool = False, threads: int = 0
+        self, csx: bool = True, debug_pec: bool = False, threads: int = 2
     ) -> None:
         """
         Run simulation.
 
         :param csx: View the CSXCAD structure before running the
-            simulation.  This additionally prompts the user as to
+            simulation. This additionally prompts the user as to
             whether they'd like to continue with the simulation after
             viewing the simulation structure.
         :param debug_pec: Dump a file containing information about the
-            PECs (perfect electrical conductors).  This file can be
+            PECs (perfect electrical conductors). This file can be
             viewed with Paraview.
         :param threads: Number of threads to use for the simulation.
-            This uses the exact same interface as OpenEMS.  That is,
-            the default value of 0 uses the maximum number of threads
-            and any other number uses the number provided.
+            This uses the exact same interface as OpenEMS. That is, a
+            value of 0 uses the maximum number of threads and any
+            other number uses the number provided.
         """
         if csx:
             self.view_csx(prompt=True)
