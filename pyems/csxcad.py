@@ -94,8 +94,7 @@ def add_metal(
     name: str,
     color: Optional[str] = colors["aluminum"],
 ) -> CSProperties:
-    """
-    """
+    """"""
     prop = csx.AddMetal(name)
     if not color is None:
         prop.SetColor(color)
@@ -110,10 +109,11 @@ def add_conducting_sheet(
     thickness: float,
     color: Optional[str] = colors["enig"],
 ) -> CSProperties:
-    """
-    """
+    """"""
     prop = csx.AddConductingSheet(
-        name, conductivity=conductivity, thickness=thickness,
+        name,
+        conductivity=conductivity,
+        thickness=thickness,
     )
     if not color is None:
         prop.SetColor(color)
@@ -127,8 +127,7 @@ def construct_box(
     priority: int,
     transform: CSTransform = None,
 ) -> CSPrimitives:
-    """
-    """
+    """"""
     if transform is None:
         box = _add_box(
             prop=prop, priority=priority, start=box.start(), stop=box.stop()
@@ -138,24 +137,23 @@ def construct_box(
     if box.has_zero_dim():
         fp_warning(construct_box)
 
-    box = _add_box(
+    cs_box = _add_box(
         prop=prop,
         priority=priority,
         start=box.origin_start(),
         stop=box.origin_stop(),
     )
-    apply_transform(box, transform)
+    apply_transform(cs_box, transform)
     translate = CSTransform()
     translate.AddTransform("Translate", box.center().coordinate_list())
-    apply_transform(box, translate)
-    return box
+    apply_transform(cs_box, translate)
+    return cs_box
 
 
 def _circle_points(
     center: C3Tuple, radius: float, normal: Axis, poly_faces: int
 ) -> List[Coordinate2]:
-    """
-    """
+    """"""
     pts1 = np.multiply(radius, np.cos(np.linspace(0, 2 * np.pi, poly_faces)))
     pts2 = np.multiply(radius, np.sin(np.linspace(0, 2 * np.pi, poly_faces)))
     if normal.intval() == 0:
@@ -194,7 +192,10 @@ def construct_circle(
     prim = construct_polygon(
         prop=prop,
         points=_circle_points(
-            center=center, radius=radius, normal=normal, poly_faces=poly_faces,
+            center=center,
+            radius=radius,
+            normal=normal,
+            poly_faces=poly_faces,
         ),
         normal=normal,
         elevation=center[normal.intval()],
@@ -231,8 +232,7 @@ def construct_polygon(
     priority: int,
     transform: CSTransform = None,
 ):
-    """
-    """
+    """"""
     poly_points = _poly_points(points)
     if transform is None:
         prim = _add_polygon(
@@ -291,8 +291,7 @@ def construct_cylinder(
     priority: int,
     transform: CSTransform = None,
 ) -> CSPrimCylinder:
-    """
-    """
+    """"""
     start = c3_maybe_tuple(start)
     stop = c3_maybe_tuple(stop)
 
@@ -322,8 +321,7 @@ def construct_cylindrical_shell(
     priority: int,
     transform: CSTransform = None,
 ) -> CSPrimCylindricalShell:
-    """
-    """
+    """"""
     start = c3_maybe_tuple(start)
     stop = c3_maybe_tuple(stop)
 
@@ -351,8 +349,7 @@ def construct_cylindrical_shell(
 def _remove_prim_coord_dups(
     coords: List[Union[Coordinate2, Coordinate3]]
 ) -> List[Union[Coordinate2, Coordinate3]]:
-    """
-    """
+    """"""
     unique_coords = []
     for coord in coords:
         if not coord in unique_coords:
@@ -386,8 +383,7 @@ def prim_coords2(prim: CSPrimitives) -> List[Coordinate2]:
 
 
 def _box_coords(box: CSPrimBox) -> List[Coordinate3]:
-    """
-    """
+    """"""
     start = box.GetStart()
     stop = box.GetStop()
     box3 = Box3(tuple(start), tuple(stop))
@@ -404,8 +400,7 @@ def _box_coords(box: CSPrimBox) -> List[Coordinate3]:
 
 
 def _poly_coords(poly: CSPrimPolygon) -> List[Coordinate3]:
-    """
-    """
+    """"""
     coords = poly.GetCoords()
     elev = poly.GetElevation()
     norm_dir = poly.GetNormDir()
@@ -465,8 +460,7 @@ def _add_linpoly(
     elevation: float,
     length: float,
 ) -> CSPrimitives:
-    """
-    """
+    """"""
     if np.isclose(length, 0, rtol=0, atol=1e-8):
         points = fp_nearest(points)
         elevation = fp_nearest(elevation)
@@ -488,8 +482,7 @@ def _add_polygon(
     norm_dir: int,
     elevation: float,
 ) -> CSPrimitives:
-    """
-    """
+    """"""
     points = fp_nearest(points)
     elevation = fp_nearest(elevation)
 
@@ -503,10 +496,12 @@ def _add_polygon(
 
 
 def _add_box(
-    prop: CSProperties, priority: int, start: List[float], stop: List[float],
+    prop: CSProperties,
+    priority: int,
+    start: List[float],
+    stop: List[float],
 ) -> CSPrimitives:
-    """
-    """
+    """"""
     # Round unconditionally even though doing so may be unnecessary
     # (some dimensions will have nonzero length). This shouldn't have
     # a downside and checking would take longer.
