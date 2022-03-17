@@ -3,12 +3,12 @@ from typing import List, Union, Tuple, Optional
 from copy import deepcopy
 from functools import partial
 import numpy as np
+from CSXCAD.CSTransform import CSTransform
 from pyems.fp import fp_equalp
 
 
 def val_inside(val: float, bound1: float, bound2: float) -> bool:
-    """
-    """
+    """"""
     min_bound = np.min([bound1, bound2])
     max_bound = np.max([bound1, bound2])
     if val >= min_bound and val <= max_bound:
@@ -17,47 +17,39 @@ def val_inside(val: float, bound1: float, bound2: float) -> bool:
 
 
 class Coordinate2:
-    """
-    """
+    """"""
 
     def __init__(self, x: float, y: float):
-        """
-        """
+        """"""
         self._x = x
         self._y = y
 
     @property
     def x(self) -> float:
-        """
-        """
+        """"""
         return self._x
 
     @property
     def y(self) -> float:
-        """
-        """
+        """"""
         return self._y
 
     @x.setter
     def x(self, value: float) -> None:
-        """
-        """
+        """"""
         self._x = value
 
     @y.setter
     def y(self, value: float) -> None:
-        """
-        """
+        """"""
         self._y = value
 
     def __getitem__(self, key):
-        """
-        """
+        """"""
         return self._int_to_coord(key)
 
     def __setitem__(self, key, val):
-        """
-        """
+        """"""
         if key == 0:
             self.x = val
         elif key == 1:
@@ -66,15 +58,13 @@ class Coordinate2:
             raise ValueError("Invalid index.")
 
     def __eq__(self, other: Coordinate2) -> bool:
-        """
-        """
+        """"""
         if self.x == other.x and self.y == other.y:
             return True
         return False
 
     def _int_to_coord(self, val) -> float:
-        """
-        """
+        """"""
         if val == 0:
             return self.x
         elif val == 1:
@@ -82,12 +72,12 @@ class Coordinate2:
         else:
             raise ValueError("Invalid index.")
 
-    def coordinate_list(self) -> List[float]:
+    def coordinate_list(self) -> np.ndarray:
         """
-        Retrieve a list of coordinate values for use by openems, which
-        requires lists of coordinates.
+        Retrieve an array of coordinate values for use by openems,
+        which requires coordinates in a form that can be indexed.
         """
-        return [self._x, self._y]
+        return np.array([self._x, self._y])
 
     def transform(self, transform: CSTransform) -> Coordinate2:
         """
@@ -96,14 +86,13 @@ class Coordinate2:
         replace the old coordinate you must assign it to the result of
         this function.
         """
-        clist = self.coordinate_list()
+        clist = list(self.coordinate_list())
         clist.append(0)
         tclist = transform.Transform(clist)
         return Coordinate2(tclist[0], tclist[1])
 
     def round_prec(self, prec: int) -> Coordinate2:
-        """
-        """
+        """"""
         clist = self.coordinate_list()
         clist = np.around(clist, prec)
         return Coordinate2(clist[0], clist[1])
@@ -135,8 +124,7 @@ def line2_angle(coord: Coordinate2, center: Coordinate2) -> float:
 
 
 def reorder_counterclockwise2(coords: List[Coordinate2]) -> List[Coordinate2]:
-    """
-    """
+    """"""
     center = list_center2(coords)
     func = partial(line2_angle, center=center)
     ordered_coords = sorted(coords, key=func)
@@ -144,33 +132,29 @@ def reorder_counterclockwise2(coords: List[Coordinate2]) -> List[Coordinate2]:
 
 
 class Coordinate3(Coordinate2):
-    """
-    """
+    """"""
 
     def __init__(self, x: float, y: float, z: float):
-        """
-        """
+        """"""
         self._z = z
         super().__init__(x, y)
 
     @property
     def z(self):
-        """
-        """
+        """"""
         return self._z
 
     @z.setter
     def z(self, value: float):
-        """
-        """
+        """"""
         self._z = value
 
-    def coordinate_list(self) -> List[float]:
+    def coordinate_list(self) -> np.ndarray:
         """
         Retrieve a list of coordinate values for use by openems, which
         requires lists of coordinates.
         """
-        return [self._x, self._y, self._z]
+        return np.array([self._x, self._y, self._z])
 
     def transform(self, transform: CSTransform) -> Coordinate3:
         """
@@ -184,15 +168,13 @@ class Coordinate3(Coordinate2):
         return Coordinate3(tclist[0], tclist[1], tclist[2])
 
     def round_prec(self, prec: int) -> Coordinate3:
-        """
-        """
+        """"""
         clist = self.coordinate_list()
         clist = np.around(clist, prec)
         return Coordinate3(clist[0], clist[1], clist[2])
 
     def __setitem__(self, key, val):
-        """
-        """
+        """"""
         if key == 0:
             self.x = val
         elif key == 1:
@@ -203,15 +185,13 @@ class Coordinate3(Coordinate2):
             raise ValueError("Invalid index.")
 
     def __eq__(self, other: Coordinate3):
-        """
-        """
+        """"""
         if self.x == other.x and self.y == other.y and self.z == other.z:
             return True
         return False
 
     def _int_to_coord(self, val):
-        """
-        """
+        """"""
         if val == 0:
             return self.x
         elif val == 1:
@@ -232,8 +212,7 @@ class Axis:
     """
 
     def __init__(self, axis, direction: int = 1):
-        """
-        """
+        """"""
         if type(axis) is str:
             self._axis = self._str_to_int(axis)
         else:
@@ -244,37 +223,31 @@ class Axis:
 
     @property
     def axis(self) -> int:
-        """
-        """
+        """"""
         return self._axis
 
     @property
     def direction(self) -> int:
-        """
-        """
+        """"""
         return self._direction
 
     def is_positive_direction(self) -> bool:
-        """
-        """
+        """"""
         return self._direction == 1
 
-    def as_list(self) -> List[int]:
-        """
-        """
-        lst = [0, 0, 0]
+    def as_list(self) -> np.ndarray:
+        """"""
+        lst = np.zeros(3)
         lst[self._axis] = self._direction
         return lst
 
     def _check_direction(self) -> None:
-        """
-        """
+        """"""
         if self._direction != 1 and self._direction != -1:
             raise ValueError("Invalid direction. Valid values are +1 and -1.")
 
     def _str_to_int(self, val: str) -> int:
-        """
-        """
+        """"""
         lval = val.lower()
         if lval == "x":
             return 0
@@ -289,8 +262,7 @@ class Axis:
             )
 
     def _int_to_str(self, val: int) -> str:
-        """
-        """
+        """"""
         if val == 0:
             return "x"
         elif val == 1:
@@ -303,13 +275,11 @@ class Axis:
             )
 
     def intval(self) -> int:
-        """
-        """
+        """"""
         return self._axis
 
     def strval(self) -> str:
-        """
-        """
+        """"""
         return self._int_to_str(self._axis)
 
 
@@ -379,61 +349,55 @@ def c3_from_dim(dim: int, vals: Tuple[float, float, float]) -> Coordinate3:
 
 
 class Box2:
-    """
-    """
+    """"""
 
     def __init__(self, min_corner: C2Tuple, max_corner: C2Tuple):
-        """
-        """
+        """"""
         self._min_corner = c2_maybe_tuple(min_corner)
         self._max_corner = c2_maybe_tuple(max_corner)
 
     @property
     def min_corner(self) -> Coordinate2:
-        """
-        """
+        """"""
         return deepcopy(self._min_corner)
 
     @property
     def max_corner(self) -> Coordinate2:
-        """
-        """
+        """"""
         return deepcopy(self._max_corner)
 
-    def start(self) -> List[float]:
+    def start(self) -> np.ndarray:
         """
         List object expected by OpenEMS interface.
         """
         return self.min_corner.coordinate_list()
 
-    def stop(self) -> List[float]:
+    def stop(self) -> np.ndarray:
         """
         List object expected by OpenEMS interface.
         """
         return self.max_corner.coordinate_list()
 
-    def origin_start(self) -> List[float]:
+    def origin_start(self) -> np.ndarray:
         """
         The hypothetical start coordinate for the box if the box were
         centered at the origin.
         """
         return self.start() - self.center().coordinate_list()
 
-    def origin_stop(self) -> List[float]:
+    def origin_stop(self) -> np.ndarray:
         """
         The hypothetical stop coordinate for the box if the box were
         centered at the origin.
         """
         return self.stop() - self.center().coordinate_list()
 
-    def as_list(self) -> List[List[float]]:
-        """
-        """
-        return [self.start(), self.stop()]
+    def as_list(self) -> np.ndarray:
+        """"""
+        return np.array([self.start(), self.stop()])
 
     def corners(self) -> List[Coordinate2]:
-        """
-        """
+        """"""
         # TODO should be a more concise way to do this.
         corner1 = deepcopy(self.min_corner)
 
@@ -448,26 +412,22 @@ class Box2:
         return [corner1, corner2, corner3, corner4]
 
     def center(self) -> Coordinate2:
-        """
-        """
+        """"""
         return Coordinate2(
             np.average([self.min_corner.x, self.max_corner.x]),
             np.average([self.min_corner.y, self.max_corner.y]),
         )
 
     def length(self) -> float:
-        """
-        """
+        """"""
         return np.abs(self.max_corner.x - self.min_corner.x)
 
     def width(self) -> float:
-        """
-        """
+        """"""
         return np.abs(self.max_corner.y - self.min_corner.y)
 
     def negative_direction(self) -> bool:
-        """
-        """
+        """"""
         return self.max_corner.x < self.min_corner.x
 
     def has_zero_dim(self) -> bool:
@@ -482,23 +442,19 @@ class Box2:
 
 
 class Box3:
-    """
-    """
+    """"""
 
     def __init__(self, min_corner: C3Tuple, max_corner: C3Tuple):
-        """
-        """
+        """"""
         self._min_corner = c3_maybe_tuple(min_corner)
         self._max_corner = c3_maybe_tuple(max_corner)
 
     def __getitem__(self, key):
-        """
-        """
+        """"""
         return self._int_to_corner(key)
 
     def _int_to_corner(self, val: int) -> Coordinate3:
-        """
-        """
+        """"""
         if val == 0:
             return self.min_corner
         elif val == 1:
@@ -508,16 +464,14 @@ class Box3:
 
     @property
     def min_corner(self) -> Coordinate3:
-        """
-        """
+        """"""
         return self._min_corner
 
     @min_corner.setter
     def min_corner(
         self, val: Union[Coordinate3, Tuple[float, float, float]]
     ) -> None:
-        """
-        """
+        """"""
         if isinstance(val, Tuple):
             if not len(val) == 3:
                 raise ValueError("Tuples passed to Box3 must have length 3.")
@@ -527,16 +481,14 @@ class Box3:
 
     @property
     def max_corner(self) -> Coordinate3:
-        """
-        """
+        """"""
         return self._max_corner
 
     @max_corner.setter
     def max_corner(
         self, val: Union[Coordinate3, Tuple[float, float, float]]
     ) -> None:
-        """
-        """
+        """"""
         if isinstance(val, Tuple):
             if not len(val) == 3:
                 raise ValueError("Tuples passed to Box3 must have length 3.")
@@ -557,8 +509,7 @@ class Box3:
                 self.min_corner[dim] = old_max
 
     def corners(self) -> List[Coordinate3]:
-        """
-        """
+        """"""
         # TODO should be a more concise way to do this.
         corner1 = deepcopy(self.min_corner)
 
@@ -594,8 +545,7 @@ class Box3:
         ]
 
     def inside(self, point: Coordinate3) -> bool:
-        """
-        """
+        """"""
         for dim in range(3):
             if not val_inside(
                 point[dim], self.min_corner[dim], self.max_corner[dim]
@@ -603,13 +553,13 @@ class Box3:
                 return False
         return True
 
-    def start(self) -> List[float]:
+    def start(self) -> np.ndarray:
         """
         List object expected by OpenEMS interface.
         """
         return self.min_corner.coordinate_list()
 
-    def stop(self) -> List[float]:
+    def stop(self) -> np.ndarray:
         """
         List object expected by OpenEMS interface.
         """
@@ -629,14 +579,12 @@ class Box3:
         """
         return self.stop() - self.center().coordinate_list()
 
-    def as_list(self) -> List[List[float]]:
-        """
-        """
-        return [self.start(), self.stop()]
+    def as_list(self) -> np.ndarray:
+        """"""
+        return np.array([self.start(), self.stop()])
 
     def center(self) -> Coordinate3:
-        """
-        """
+        """"""
         return Coordinate3(
             np.average([self.min_corner.x, self.max_corner.x]),
             np.average([self.min_corner.y, self.max_corner.y]),
@@ -644,23 +592,19 @@ class Box3:
         )
 
     def length(self) -> float:
-        """
-        """
+        """"""
         return np.abs(self.max_corner.x - self.min_corner.x)
 
     def width(self) -> float:
-        """
-        """
+        """"""
         return np.abs(self.max_corner.y - self.min_corner.y)
 
     def height(self) -> float:
-        """
-        """
+        """"""
         return np.abs(self.max_corner.z - self.min_corner.z)
 
     def negative_direction(self) -> bool:
-        """
-        """
+        """"""
         return self.max_corner.x < self.min_corner.x
 
     def has_zero_dim(self) -> bool:
@@ -677,8 +621,7 @@ class Box3:
 
 
 def box_overlap(box1: Box3, box2: Box3) -> bool:
-    """
-    """
+    """"""
     box1_corners = box1.corners()
     for corner in box1_corners:
         if box2.inside(corner):
