@@ -4,6 +4,7 @@ import numpy as np
 from pyems.simulation import Simulation
 from pyems.mesh import Mesh
 from pyems.utilities import max_priority
+from pyems.priority import priorities
 from pyems.coordinate import Box3, box_overlap
 from pyems.csxcad import construct_box
 
@@ -113,7 +114,7 @@ class Feed:
     def _impedance_rcl(self) -> Tuple[float, float, float]:
         """
         """
-        if np.is_complex(self.impedance):
+        if np.iscomplex(self.impedance):
             warn("Only feed resistances are currently supported.")
 
         return (np.real(self.impedance), 0, 0)
