@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+import sys
 import numpy as np
 from pyems.pcb import common_pcbs
 from pyems.simulation import Simulation
@@ -94,6 +96,9 @@ mesh = Mesh(
 )
 
 dump = FieldDump(sim=sim, box=mesh.sim_box(include_pml=False))
+
+if os.getenv("_PYEMS_PYTEST"):
+    sys.exit(0)
 
 sim.run()
 sim.view_field()

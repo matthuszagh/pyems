@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+import sys
 import numpy as np
 from pyems.pcb import common_pcbs
 from pyems.simulation import Simulation
@@ -43,8 +45,6 @@ Microstrip(
     trace_layer=0,
     gnd_layer=1,
     gnd_gap=(gcpw_gap, gcpw_gap),
-    via_gap=(via_gap, via_gap),
-    via=None,
     port_number=1,
     feed_shift=0.2,
     excite=True,
@@ -87,8 +87,6 @@ Microstrip(
     trace_layer=3,
     gnd_layer=2,
     gnd_gap=(gcpw_gap, gcpw_gap),
-    via_gap=(None, None),
-    via=None,
     port_number=2,
     excite=False,
 )
@@ -103,6 +101,9 @@ mesh = Mesh(
 )
 
 dump = FieldDump(sim=sim, box=mesh.sim_box(include_pml=False))
+
+if os.getenv("_PYEMS_PYTEST"):
+    sys.exit(0)
 
 sim.run()
 sim.view_field()

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+import sys
 import numpy as np
 from pyems.simulation import Simulation
 from pyems.structure import PCB, Microstrip, ViaWall
@@ -73,6 +75,9 @@ mesh = Mesh(
     min_lines=25,
     expand_bounds=((0, 0), (24, 24), (24, 24)),
 )
+
+if os.getenv("_PYEMS_PYTEST"):
+    sys.exit(0)
 
 sim.run()
 sim.view_field()

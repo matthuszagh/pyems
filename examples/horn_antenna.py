@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import sys
 import numpy as np
 from pyems.utilities import print_table
 from pyems.port import RectWaveguidePort
@@ -16,9 +17,7 @@ freq = np.linspace(5.3e9, 5.9e9, 501)
 sim = Simulation(freq=freq, unit=unit)
 
 metal = sim.csx.AddMetal("metal")
-stl = metal.AddPolyhedronReader(
-    filename=os.path.abspath("horn-antenna.stl")
-)
+stl = metal.AddPolyhedronReader(filename=os.path.abspath("horn-antenna.stl"))
 stl.ReadFile()
 
 wg = standard_waveguides["WR159"]
@@ -45,6 +44,9 @@ mesh = Mesh(
 )
 field_dump = FieldDump(sim=sim, box=mesh.sim_box(include_pml=False))
 nf2ff = NF2FF(sim=sim)
+
+if os.getenv("_PYEMS_PYTEST"):
+    sys.exit(0)
 
 sim.run()
 sim.view_field()

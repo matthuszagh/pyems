@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+import sys
 import numpy as np
 from pyems.structure import Microstrip, PCB, MicrostripCoupler
 from pyems.simulation import Simulation
@@ -117,7 +119,11 @@ FieldDump(
     dump_type=DumpType.current_density_time,
 )
 
+
 write_footprint(coupler, "coupler_20db", "coupler_20db.kicad_mod")
+
+if os.getenv("_PYEMS_PYTEST"):
+    sys.exit(0)
 
 sim.run()
 sim.view_field()

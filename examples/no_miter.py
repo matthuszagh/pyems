@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+import sys
 import numpy as np
 from pyems.simulation import Simulation
 from pyems.structure import PCB, Microstrip
@@ -33,9 +35,6 @@ Microstrip(
     trace_layer=0,
     gnd_layer=1,
     gnd_gap=(gap, gap),
-    via_gap=(via_gap, via_gap),
-    via=None,
-    shorten_via_wall=(0, trace_width + gap + via_gap),
     port_number=1,
     feed_shift=0.4,
     excite=True,
@@ -54,10 +53,7 @@ Microstrip(
     trace_layer=0,
     gnd_layer=1,
     gnd_gap=(gap, gap),
-    via_gap=(via_gap, via_gap),
     terminal_gap=(None, gap),
-    via=None,
-    shorten_via_wall=(0, trace_width + gap + via_gap),
     port_number=2,
     excite=False,
 )
@@ -79,6 +75,9 @@ mesh = Mesh(
     min_lines=5,
     expand_bounds=((0, 8), (0, 8), (8, 8)),
 )
+
+if os.getenv("_PYEMS_PYTEST"):
+    sys.exit(0)
 
 sim.run()
 sim.view_field()

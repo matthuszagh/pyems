@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+import sys
 import numpy as np
 from pyems.simulation import Simulation
 from pyems.pcb import common_pcbs
@@ -25,7 +27,6 @@ pcb_width = 10
 trace_width = 0.85
 gnd_gap = mil_to_mm(6)
 trace_gap = mil_to_mm(6)
-via_gap = 0.4
 
 cap_dim = common_smd_passives["0402C"]
 cap_dim.set_unit(unit)
@@ -51,7 +52,6 @@ DifferentialMicrostrip(
     gap=trace_gap,
     propagation_axis=Axis("x"),
     gnd_gap=(gnd_gap, gnd_gap),
-    via_gap=(via_gap, via_gap),
     port_number=1,
     excite=True,
     ref_impedance=50,
@@ -90,7 +90,6 @@ DifferentialMicrostrip(
     gap=trace_gap,
     propagation_axis=Axis("x", direction=-1),
     gnd_gap=(gnd_gap, gnd_gap),
-    via_gap=(via_gap, via_gap),
     port_number=2,
     ref_impedance=50,
 )
@@ -115,6 +114,10 @@ FieldDump(
     ),
     dump_type=DumpType.current_density_time,
 )
+
+if os.getenv("_PYEMS_PYTEST"):
+    sys.exit(0)
+
 
 sim.run()
 sim.view_field()
