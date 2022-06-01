@@ -1691,12 +1691,6 @@ class CoaxPort(Port):
 
     def _set_core(self) -> None:
         """"""
-        # TODO bug?? cylinder ignored if start > stop
-        if not self._direction() == 1:
-            start = self._stop
-            self._stop = self._start
-            self._start = start
-
         core_prop = add_metal(csx=self.sim.csx, name=self._core_name())
         construct_cylinder(
             prop=core_prop,
