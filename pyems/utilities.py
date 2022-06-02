@@ -11,7 +11,10 @@ from CSXCAD.CSTransform import CSTransform
 # should be computed automatically based on the last digit that
 # differs between each value.
 def print_table(
-    data: np.array, col_names: List[str], prec: List[int], out_file=sys.stdout,
+    data: np.array,
+    col_names: List[str],
+    prec: List[int],
+    out_file=sys.stdout,
 ) -> None:
     """
     Data is multidimensional list, where each inner list corresponds
@@ -28,6 +31,12 @@ def print_table(
         )
         for col in range(len(col_names))
     ]
+
+    close = False
+    if isinstance(out_file, str):
+        out_file = open(out_file, "w")
+        close = True
+
     for i, col in enumerate(col_names):
         out_file.write("{:{width}}".format(col, width=col_widths[i]))
     out_file.write("\n")
@@ -41,6 +50,9 @@ def print_table(
                 )
             )
         out_file.write("\n")
+
+    if close == True:
+        out_file.close()
 
 
 def _val_digits(val: float) -> int:
