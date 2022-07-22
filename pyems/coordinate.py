@@ -17,39 +17,33 @@ def val_inside(val: float, bound1: float, bound2: float) -> bool:
 
 
 class Coordinate2:
-    """"""
+    """ A 2 dimentional coordinate
+    """
 
     def __init__(self, x: float, y: float):
-        """"""
         self._x = x
         self._y = y
 
     @property
     def x(self) -> float:
-        """"""
         return self._x
 
     @property
     def y(self) -> float:
-        """"""
         return self._y
 
     @x.setter
     def x(self, value: float) -> None:
-        """"""
         self._x = value
 
     @y.setter
     def y(self, value: float) -> None:
-        """"""
         self._y = value
 
     def __getitem__(self, key):
-        """"""
         return self._int_to_coord(key)
 
     def __setitem__(self, key, val):
-        """"""
         if key == 0:
             self.x = val
         elif key == 1:
@@ -58,13 +52,105 @@ class Coordinate2:
             raise ValueError("Invalid index.")
 
     def __eq__(self, other: Coordinate2) -> bool:
-        """"""
         if self.x == other.x and self.y == other.y:
             return True
         return False
+    
+    def __add__(self, other: Coordinate2) -> Coordinate2:
+        """
+        Positive translation by another Coordinate2.
+        This does not modify the coordinate.
 
+        :param other: The coordinate to translate by
+        :type other: Coordinate2
+        :return: The translated coordinate.
+        :rtype: Coordinate2
+        """
+        t = CSTransform()
+        t.Translate((other.x, other.y, 0))
+        return self.transform(t)
+    
+    def __sub__(self, other: Coordinate2) -> Coordinate2:
+        """
+        Negative translation by another Coordinate2.
+        This does not modify the coordinate.
+
+        :param other: The coordinate to translate by
+        :type other: Coordinate2
+        :return: The translated coordinate.
+        :rtype: Coordinate2
+        """
+        t = CSTransform()
+        t.Translate((-other.x, -other.y, 0))
+        return self.transform(t)
+
+    def __mul__(self, scale: float | Coordinate2) -> Coordinate2:
+        """
+        Scale by a specified value.
+        This does not modify the coordinate.
+
+        :param scale: The scale factor. If a float, scale x and y by this value.
+                      If a Coordinate2, use separate x and y scale factors.
+        :type scale: float | Coordinate2
+        :return: The scaled coordinate.
+        :rtype: Coordinate2
+        """
+        if isinstance(scale, Coordinate2):
+            scale = scale.x, scale.y, 1
+        t = CSTransform()
+        t.Scale(scale)
+        return self.transform(t)
+    
+    def __truediv__(self, scale: float | Coordinate2) -> Coordinate2:
+        """
+        Scale but a specified value. This is equivalent to A * (1 / scale)
+        This does not modify the coordinate.
+
+        :param scale: The scale factor. If a float, scale x and y by this value.
+                      If a Coordinate2, use separate x and y scale factors.
+        :type scale: float | Coordinate2
+        :return: The scaled coordinate.
+        :rtype: Coordinate2
+        """
+        if isinstance(scale, Coordinate2):
+            scale = 1/scale.x, 1/scale.y, 1
+        else:
+            scale = 1/scale
+        t = CSTransform()
+        t.Scale(scale)
+        return self.transform(t)
+    
+    def __neg__(self) -> Coordinate2:
+        """
+        Negative both coordinate values.
+        This does not modify the coordinate.
+
+        :return: The negated coordinate
+        :rtype: Coordinate2
+        """
+        return Coordinate2(-self.x, -self.y)
+
+    def __abs__(self) -> Coordinate2:
+        """
+        Absolute value of both coodinate values.
+        This does not modify the coordinate.
+
+        :return: The new coordinate.
+        :rtype: Coordinate2
+        """
+        return Coordinate2(abs(self.x), abs(self.y))
+    
+    def __round__(self, ndigits: int=0) -> Coordinate2:
+        """
+        Round to a specified precision. Calls round_prec()
+        This does not modify the coordinate.
+
+        :return: A new coordinate with the specified precision.
+        :rtype: Coordinate2
+        """
+        return self.round_prec(ndigits)
+    
     def _int_to_coord(self, val) -> float:
-        """"""
         if val == 0:
             return self.x
         elif val == 1:
@@ -76,6 +162,9 @@ class Coordinate2:
         """
         Retrieve an array of coordinate values for use by openems,
         which requires coordinates in a form that can be indexed.
+
+        :return: The x, y coordinates
+        :rtype: np.ndarray
         """
         return np.array([self._x, self._y])
 
@@ -85,6 +174,11 @@ class Coordinate2:
         simply returns a new transformed coordinate.  If you want to
         replace the old coordinate you must assign it to the result of
         this function.
+
+        :param transform: The transformation
+        :type transform: CSTransform
+        :return: The new coordinate
+        :rtype: Coordinate2
         """
         clist = list(self.coordinate_list())
         clist.append(0)
@@ -92,10 +186,21 @@ class Coordinate2:
         return Coordinate2(tclist[0], tclist[1])
 
     def round_prec(self, prec: int) -> Coordinate2:
-        """"""
+        """
+        Round the coordinate to a specified precision.
+        This does not modify the coordinate.
+
+        :param prec: The number of decimal places to round.
+        :type prec: int
+        :return: A new coordinate with the rounded values.
+        :rtype: Coordinate2
+        """
         clist = self.coordinate_list()
         clist = np.around(clist, prec)
         return Coordinate2(clist[0], clist[1])
+    
+    def __repr__(self) -> str:
+        return f'Coordinate2({self.x}, {self.y})'
 
 
 def list_center2(coords: List[Coordinate2]) -> Coordinate2:
@@ -189,6 +294,100 @@ class Coordinate3(Coordinate2):
         if self.x == other.x and self.y == other.y and self.z == other.z:
             return True
         return False
+    
+    def __add__(self, other: Coordinate3) -> Coordinate3:
+        """
+        Positive translation by another Coordinate3.
+        This does not modify the coordinate.
+
+        :param other: The coordinate to translate by
+        :type other: Coordinate3
+        :return: The translated coordinate.
+        :rtype: Coordinate3
+        """
+        t = CSTransform()
+        t.Translate((other.x, other.y, other.z))
+        return self.transform(t)
+    
+    def __sub__(self, other: Coordinate3) -> Coordinate3:
+        """
+        Negative translation by another Coordinate3.
+        This does not modify the coordinate.
+
+        :param other: The coordinate to translate by
+        :type other: Coordinate3
+        :return: The translated coordinate.
+        :rtype: Coordinate3
+        """
+        t = CSTransform()
+        t.Translate((-other.x, -other.y, -other.z))
+        return self.transform(t)
+
+    def __mul__(self, scale: float | Coordinate3) -> Coordinate3:
+        """
+        Scale by a specified value.
+        This does not modify the coordinate.
+
+        :param scale: The scale factor. If a float, scale x and y by this value.
+                      If a Coordinate3, use separate x, y, and z scale factors.
+        :type scale: float | Coordinate3
+        :return: The scaled coordinate.
+        :rtype: Coordinate3
+        """
+        if isinstance(scale, Coordinate3):
+            scale = scale.x, scale.y, scale.z
+        t = CSTransform()
+        t.Scale(scale)
+        return self.transform(t)
+    
+    def __truediv__(self, scale: float | Coordinate3) -> Coordinate3:
+        """
+        Scale but a specified value. This is equivalent to A * (1 / scale)
+        This does not modify the coordinate.
+
+        :param scale: The scale factor. If a float, scale x and y by this value.
+                      If a Coordinate3, use separate x, y, and z scale factors.
+        :type scale: float | Coordinate3
+        :return: The scaled coordinate.
+        :rtype: Coordinate3
+        """
+        if isinstance(scale, Coordinate3):
+            scale = 1/scale.x, 1/scale.y, 1/scale.z
+        else:
+            scale = 1/scale
+        t = CSTransform()
+        t.Scale(scale)
+        return self.transform(t)
+    
+    def __neg__(self) -> Coordinate3:
+        """
+        Negative both coordinate values.
+        This does not modify the coordinate.
+
+        :return: The negated coordinate
+        :rtype: Coordinate3
+        """
+        return Coordinate3(-self.x, -self.y, -self.z)
+
+    def __abs__(self) -> Coordinate3:
+        """
+        Absolute value of both coodinate values.
+        This does not modify the coordinate.
+
+        :return: The new coordinate.
+        :rtype: Coordinate3
+        """
+        return Coordinate3(abs(self.x), abs(self.y), abs(self.z))
+    
+    def __round__(self, ndigits: int=0) -> Coordinate3:
+        """
+        Round to a specified precision. Calls round_prec()
+        This does not modify the coordinate.
+
+        :return: A new coordinate with the specified precision.
+        :rtype: Coordinate3
+        """
+        return self.round_prec(ndigits)
 
     def _int_to_coord(self, val):
         """"""
@@ -200,6 +399,9 @@ class Coordinate3(Coordinate2):
             return self.z
         else:
             raise ValueError("Invalid index.")
+    
+    def __repr__(self) -> str:
+        return f'Coordinate3({self.x}, {self.y}, {self.z})'
 
 
 class Axis:
@@ -355,6 +557,9 @@ class Box2:
         """"""
         self._min_corner = c2_maybe_tuple(min_corner)
         self._max_corner = c2_maybe_tuple(max_corner)
+    
+    def __repr__(self) -> str:
+        return f'Box2({self.min_corner}, {self.max_corner})'
 
     @property
     def min_corner(self) -> Coordinate2:
@@ -439,6 +644,30 @@ class Box2:
         ):
             return True
         return False
+    
+    def __add__(self, coord: Coordinate2) -> Box2:
+        """
+        Translate by a specified coordinate.
+        This does not modify the box
+
+        :param coord: The coordinate to transform
+        :type coord: Coordinate2
+        :return: The translated box
+        :rtype: Box2
+        """
+        return Box2(self.min_corner + coord, self.max_corner + coord)
+    
+    def __sub__(self, coord: Coordinate2) -> Box2:
+        """
+        Translate by a specified coordinate.
+        This does not modify the box
+
+        :param coord: The coordinate to transform
+        :type coord: Coordinate2
+        :return: The translated box
+        :rtype: Box2
+        """
+        return Box2(self.min_corner - coord, self.max_corner - coord)
 
 
 class Box3:
@@ -618,6 +847,30 @@ class Box3:
         ):
             return True
         return False
+    
+    def __add__(self, coord: Coordinate3) -> Box3:
+        """
+        Translate by a specified coordinate.
+        This does not modify the box
+
+        :param coord: The coordinate to transform
+        :type coord: Coordinate3
+        :return: The translated box
+        :rtype: Box3
+        """
+        return Box3(self.min_corner + coord, self.max_corner + coord)
+    
+    def __sub__(self, coord: Coordinate3) -> Box3:
+        """
+        Translate by a specified coordinate.
+        This does not modify the box
+
+        :param coord: The coordinate to transform
+        :type coord: Coordinate3
+        :return: The translated box
+        :rtype: Box3
+        """
+        return Box3(self.min_corner - coord, self.max_corner - coord)
 
 
 def box_overlap(box1: Box3, box2: Box3) -> bool:
