@@ -2176,6 +2176,194 @@ class Miter(Structure):
         """
         return "miter_gap_" + str(self._index)
 
+class RadialStub(Structure):
+    """
+    Radial Stub.
+    """
+
+    unique_index = 0
+
+    def __init__(
+        self,
+        pcb: PCB,
+        position: C2TupleOp,
+        pcb_layer: int,
+        width: float,
+        length: float,
+        alpha: float,
+        resolution: float,
+        rotation: float = 0,
+        transform: CSTransform = None,
+    ):
+        """
+        :param pcb: PCB object to which the stub is added.
+        :param position: Taper midpoint.  If set to None, the stub
+            will need to be constructed later manually with construct.
+        :param pcb_layer: PCB copper layer on which the stub should
+            be placed.
+        :param width: Width of the microstrip to connect to.
+        :param length: Length of the stub (i.e. its truncated radius)
+        :param alpha: angle subtended by the radial stub (degrees)
+        :param resolution: discrete angle spacing (degrees)
+        :param rotation: Rotation about the normal axis.  A positive
+            value performs a rotation in the counterclockwise
+            direction whereas a negative value performs a rotation in
+            the clockwise direction.  This performs a rotation without
+            suffering the floating point precision affects of general
+            transformations in OpenEMS (see the documentation).
+        :param transform: Transform applied to stub.
+        """
+        self._pcb = pcb
+        self._position = c2_maybe_tuple(position)
+        tr = CSTransform()
+        tr.AddTransform("RotateAxis", "z", rotation)
+        self._rotation = tr
+        self._pcb_layer = pcb_layer
+        self._width = width
+        self._alpha = alpha / 180 * np.pi
+        self._length = length
+        self._resolution = resolution / 180 * np.pi
+        self._transform = transform
+
+        if self.position is not None:
+            self.construct(self.position)
+
+    @property
+    def pcb(self) -> PCB:
+        """
+        """
+        return self._pcb
+
+    @property
+    def position(self) -> Coordinate2:
+        """
+        """
+        return self._position
+
+    @property
+    def transform(self) -> CSTransform:
+        """
+        """
+        return self._transform
+
+    @property
+    def length(self) -> float:
+        """
+        """
+        return self._length
+
+    @property
+    def width(self) -> float:
+        """
+        """
+        return self._width
+
+    @property
+    def alpha(self) -> float:
+        """
+        """
+        return self._alpha
+
+    @property
+    def resolution(self) -> float:
+        """
+        """
+        return self._resolution
+
+    def construct(
+        self, position: C2Tuple, transform: CSTransform = None
+    ) -> None:
+        """
+        """
+        self._transform = append_transform(self.transform, transform)
+        self._position = c2_maybe_tuple(position)
+        self._construct_stub()
+
+    def _construct_stub(self) -> None:
+        """
+        """
+        stub_prop = add_conducting_sheet(
+            csx=self.pcb.sim.csx,
+            name=self._stub_name(),
+            conductivity=self.pcb.pcb_prop.metal_conductivity(),
+            thickness=self.pcb.pcb_prop.copper_thickness(self._pcb_layer),
+        )
+        pts = self._stub_points(
+          self._width,
+          self._length,
+          self._alpha,
+          self._resolution)
+
+        zpos = self._stub_elevation()
+        poly = construct_polygon(
+            prop=stub_prop,
+            points=pts,
+            normal=Axis("z"),
+            elevation=zpos,
+            priority=priorities["trace"],
+            transform=self.transform,
+        )
+
+        self._polygons = [prim_coords2(poly)]
+
+    def _stub_points(
+        self, width: float, length: float, alpha: float, resolution: float
+    ) -> List[Coordinate2]:
+        """
+        Construct a truncated sector. The truncated part starts in x = 0 and
+        spans from y = -width/2 to +width/2, resulting in a radial stub center
+        slightly shifted to the left. This shift ensures that the non-truncated
+        radius equals the length of the stub.
+        """
+
+        #
+        #
+        #          /|...
+        #         / |
+        #        /  |
+        #       /   |
+        #      /    |
+        #     /     | +width / 2
+        #    /      |
+        #   /       |
+        #  /alpha/2 |
+        #  ---------+----------------------->
+        #       T       length
+        #
+        #
+
+        T = .5 * width / np.tan(.5 * alpha)
+        R = length + T
+
+        coords = [
+            Coordinate2(self.position.x, self.position.y -.5 * width),
+            Coordinate2(self.position.x, self.position.y +.5 * width),
+        ]
+
+        steps  = int(np.ceil(alpha / resolution))
+        dphi   = alpha / steps
+
+        for i in range(steps + 1):
+            phi = .5 * alpha - dphi * i
+            x = R * np.cos(phi) - T
+            y = R * np.sin(phi)
+
+            coords.append(Coordinate2(x + self.position.x, y + self.position.y))
+
+        coords = [coord.transform(self._rotation) for coord in coords]
+
+        return coords
+
+    def _stub_name(self) -> str:
+        """
+        """
+        return "stub_" + str(self._get_ctr())
+
+    def _stub_elevation(self) -> float:
+        """
+        """
+        return self.pcb.copper_layer_elevation(self._pcb_layer)
+
 
 class SMDPassiveDimensions:
     """
