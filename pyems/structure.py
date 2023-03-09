@@ -1751,6 +1751,7 @@ class Taper(Structure):
         self._length = length
         self._gap = gap
         self._transform = transform
+        self._polygons = []
 
         if self.position is not None:
             self.construct(self.position)
@@ -1812,7 +1813,7 @@ class Taper(Structure):
         )
         pts = self._trapezoid_points(self.width1, self.width2)
         zpos = self._taper_elevation()
-        construct_polygon(
+        poly = construct_polygon(
             prop=taper_prop,
             points=pts,
             normal=Axis("z"),
@@ -1820,6 +1821,8 @@ class Taper(Structure):
             priority=priorities["trace"],
             transform=self.transform,
         )
+        poly_points = prim_coords2(poly)
+        self.polygons.append(poly_points)
 
     def _construct_gap(self) -> None:
         """
