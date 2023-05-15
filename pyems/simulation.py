@@ -234,7 +234,7 @@ class Simulation:
     def save_csx(self, path: str = None):
         """"""
         if path is None:
-            path = self.sim_dir + "/" + self._file_name() + ".xml"
+            path = os.path.join(self.sim_dir, self._file_name() + ".xml")
         self.csx.Write2XML(path)
         self._csx_path = path
 
