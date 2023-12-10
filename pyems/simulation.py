@@ -181,7 +181,7 @@ class Simulation:
                 )
             else:
                 self.fdtd.Run(self.sim_dir, cleanup=False, numThreads=threads)
-                self._calc_ports()
+        self._calc_ports()
 
     def view_csx(self, prompt: bool = False) -> None:
         """
