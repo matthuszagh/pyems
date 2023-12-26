@@ -1808,9 +1808,7 @@ class CoaxPort(Port):
 
         prop_axis = self.propagation_axis().intval()
         pos = (
-            self._direction()
-            * self._feed_shift
-            * (self._stop[prop_axis] - self._start[prop_axis])
+            self._feed_shift * (self._stop[prop_axis] - self._start[prop_axis])
         ) + self._start[prop_axis]
         _, feed_pos = mesh.nearest_mesh_line(prop_axis, pos)
 
