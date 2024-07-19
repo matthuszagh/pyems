@@ -518,6 +518,7 @@ class Mesh:
         simulation_bounds: Tuple[
             Tuple[float, float], Tuple[float, float], Tuple[float, float]
         ] = None,
+        show_pml: bool = True,
     ):
         """
         :param sim: Simulation object to which mesh should be added.
@@ -548,6 +549,8 @@ class Mesh:
             strict total mesh size and expand_bounds will be ignored.
             An error will trigger if the internal CSX structures
             require a larger mesh than the one specified here.
+        :param show_pml: Whether to show the PML (perfectly-matched
+            layers) in the CSX rendering. Default True.
         """
         self._sim = sim
         self._sim.register_mesh(self)
@@ -560,6 +563,7 @@ class Mesh:
         self.min_lines = min_lines
         self.expand_bounds = expand_bounds
         self.simulation_bounds = simulation_bounds
+        self.show_pml = show_pml
         # Keep track of mesh regions already applied. This is an array
         # of 3 elements. The 1st element is a list of ranges in the
         # x-dimension that have already been meshed. The 2nd
@@ -591,7 +595,7 @@ class Mesh:
         # set later
         self.bounded_types = None
 
-        self.generate_mesh()
+        self.generate_mesh(show_pml = self.show_pml)
 
     @property
     def sim(self) -> Simulation:
